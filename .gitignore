@@ -1,0 +1,12 @@
+*.pkl
+*.log
+*.swp
+*.npy
+*.t7
+*.pyc
+model/
+real-face/
+caricature-face/
+logs/
+sample/
+log2/
