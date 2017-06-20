@@ -1,17 +1,20 @@
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
+from tensorflow.contrib.layers import xavier_initializer
 
 
-class Hirar(object):
+class CycleEXT(object):
     '''
-    Hierarchical Features for caricature geneation
+    CycleGAN extension with UCN
     '''
 
     def __init__(self, mode='train', learning_rate=0.0003,
                  n_classes=10, class_weight=1.0, feat_layer=5,
-                 skip=True, skip_layers=2):
+                 skip=True, skip_layers=2, margin=4.0, ucn_weight=1.0):
 
         self.mode = mode
+        self.margin = margin
+        self.ucn_weight = ucn_weight
         self.skip_layers = skip_layers
         self.skip = skip
         self.learning_rate = learning_rate
@@ -24,115 +27,101 @@ class Hirar(object):
                            4: 512,
                            5: 512}
 
-    def encoder(self, images, reuse=False, scope_suffix='caric'):
+    def generator(self, images, reuse=False, scope='Real2Caric'):
 
         n_classes = self.n_classes
-        assert scope_suffix in ['caric', 'real']
-        features = []
+        assert scope in ['Real2Caric', 'Caric2Real']
 
         # images: (batch, 64, 64, 3) or (batch, 64, 64, 1)
         if images.get_shape()[3] == 1:
             # Replicate the gray scale image 3 times.
             images = tf.image.grayscale_to_rgb(images)
 
-        with tf.variable_scope('encoder_' + scope_suffix, reuse=reuse):
+        with tf.variable_scope(scope, reuse=reuse):
             with slim.arg_scope([slim.conv2d], padding='SAME',
                                 activation_fn=None,
                                 stride=2,
-                                weights_initializer=tf.contrib.layers.xavier_initializer()):
+                                weights_initializer=xavier_initializer()):
                 with slim.arg_scope([slim.batch_norm], decay=0.95,
                                     center=True, scale=True,
                                     activation_fn=tf.nn.relu,
                                     is_training=self.mode in ['train',
                                                               'pretrain']):
                     # (batch_size, 32, 32, 64)
-                    net = slim.conv2d(images, 64, [3, 3],
+                    e1_ = slim.conv2d(images, 64, [3, 3],
                                       scope='conv1')
-                    lr1 = slim.batch_norm(net, scope='bn1')
-                    features.append(lr1)
+                    e1 = slim.batch_norm(e1_, scope='g_bn1')
                     # (batch_size, 16, 16, 128)
-                    net = slim.conv2d(lr1, 128, [3, 3],
+                    e2_ = slim.conv2d(e1, 128, [3, 3],
                                       scope='conv2')
-                    lr2 = slim.batch_norm(net, scope='bn2')
-                    features.append(lr2)
+                    e2 = slim.batch_norm(e2_, scope='g_bn2')
                     # (batch_size, 8, 8, 256)
-                    net = slim.conv2d(lr2, 256, [3, 3],
+                    e3_ = slim.conv2d(e2, 256, [3, 3],
                                       scope='conv3')
-                    lr3 = slim.batch_norm(net, scope='bn3')
-                    features.append(lr3)
+                    e3 = slim.batch_norm(e3_, scope='g_bn3')
                     # (batch_size, 4, 4, 512)
-                    net = slim.conv2d(lr3, 512, [3, 3],
+                    e4_ = slim.conv2d(e3, 512, [3, 3],
                                       scope='conv4')
-                    lr4 = slim.batch_norm(net, scope='bn4')
-                    features.append(lr4)
+                    e4 = slim.batch_norm(e4_, scope='g_bn4')
                     # (batch_size, 1, 1, 512)
-                    net = slim.conv2d(lr4, 512, [4, 4], padding='VALID',
-                                      scope='conv5')
-                    lr5 = slim.batch_norm(net, activation_fn=tf.nn.tanh,
-                                          scope='bn5')
-                    features.append(lr5)
+                    e5 = slim.conv2d(e4, 512, [4, 4], padding='VALID',
+                                     scope='conv5', activation_fn=tf.nn.relu)
 
                     # (batch_size, 1, 1, n_classes)
-                    logits = slim.conv2d(lr5, n_classes, [1, 1],
-                                         padding='VALID',
-                                         scope='out')
+                    logits_ = slim.conv2d(e5, n_classes, [1, 1],
+                                          padding='VALID',
+                                          scope='logits')
                     # (batch_size, n_classes)
-                    logits = slim.flatten(logits)
-                    return features, logits
+                    logits = slim.flatten(logits_)
 
-    def decoder(self, inputs, reuse=False,
-                layer=5, scope_suffix='caric'):
-
-        assert layer in [1, 2, 3, 4, 5]
-        # inputs: (batch, 1, 1, 512)
-        net = inputs
-        with tf.variable_scope('decoder_' + scope_suffix, reuse=reuse):
             with slim.arg_scope([slim.conv2d_transpose],
                                 padding='SAME', activation_fn=None,
                                 stride=2,
-                                weights_initializer=tf.contrib.layers.xavier_initializer()):
+                                weights_initializer=xavier_initializer()):
                 with slim.arg_scope([slim.batch_norm],
                                     decay=0.95, center=True, scale=True,
                                     activation_fn=tf.nn.relu,
                                     is_training=(self.mode == 'train')):
 
                     # (batch, 1, 1, 512) -> (batch_size, 4, 4, 512)
-                    if layer == 5:
-                        net = slim.conv2d_transpose(
-                            net, 512, [4, 4],
-                            padding='VALID', scope='conv_transpose1')
-                        net = slim.batch_norm(net, scope='bn1')
-                    # (batch_size, 4, 4, 512) -> (batch_size, 8, 8, 256)
-                    if layer >= 4:
-                        net = slim.conv2d_transpose(net, 256, [3, 3],
-                                                    scope='conv_transpose2')
-                        net = slim.batch_norm(net, scope='bn2')
-                    # (batch_size, 8, 8, 256) -> (batch_size, 16, 16, 128)
-                    if layer >= 3:
-                        net = slim.conv2d_transpose(net, 128, [3, 3],
-                                                    scope='conv_transpose3')
-                        net = slim.batch_norm(net, scope='bn3')
-                    # (batch_size, 16, 16, 128) -> (batch_size, 32, 32, 64)
-                    if layer >= 2:
-                        net = slim.conv2d_transpose(net, 64, [3, 3],
-                                                    scope='conv_transpose4')
-                        net = slim.batch_norm(net, scope='bn4')
-                    # (batch_size, 32, 32, 64) -> (batch_size, 64, 64, 3)
-                    net = slim.conv2d_transpose(net, 3, [3, 3],
-                                                activation_fn=tf.nn.tanh,
-                                                scope='conv_transpose5')
-                    return net
+                    d1_ = slim.conv2d_transpose(e5, 512, [4, 4],
+                                                padding='VALID',
+                                                scope='conv_transpose1')
+                    d1_ = slim.batch_norm(d1_, scope='d_bn1')
+                    d1 = slim.dropout(d1_, scope='dropout1') + e4
 
-    def discriminator(self, features, layer=5, reuse=False):
+                    # (batch_size, 4, 4, 512) -> (batch_size, 8, 8, 256)
+                    d2_ = slim.conv2d_transpose(d1, 256, [3, 3],
+                                                scope='conv_transpose2')
+                    d2_ = slim.batch_norm(d2_, scope='d_bn2')
+                    d2 = slim.dropout(d2_, scope='dropout2') + e3
+
+                    # (batch_size, 8, 8, 256) -> (batch_size, 16, 16, 128)
+                    d3_ = slim.conv2d_transpose(d2, 128, [3, 3],
+                                                scope='conv_transpose3')
+                    d3_ = slim.batch_norm(d3_, scope='d_bn3')
+                    d3 = slim.dropout(d3_, scope='dropout3') + e2
+
+                    # (batch_size, 16, 16, 128) -> (batch_size, 32, 32, 64)
+                    d4_ = slim.conv2d_transpose(d3, 64, [3, 3],
+                                                scope='conv_transpose4')
+                    d4 = slim.batch_norm(d4_, scope='d_bn4') + e1
+
+                    # (batch_size, 32, 32, 64) -> (batch_size, 64, 64, 3)
+                    d5 = slim.conv2d_transpose(d4, 3, [3, 3],
+                                               activation_fn=tf.nn.tanh,
+                                               scope='conv_transpose5')
+                    return e5, d5, logits
+
+    def discriminator(self, images, scope='Real', reuse=False):
 
         # images: (batch, 64, 64, 3)
-        net = features
-        assert layer in [0, 1, 2, 3, 4, 5]
-        with tf.variable_scope('discriminator_layer_%d' % layer, reuse=reuse):
+        assert scope in ['Real', 'Caric']
+        with tf.variable_scope(scope, reuse=reuse):
             with slim.arg_scope([slim.conv2d], padding='SAME',
                                 activation_fn=None,
                                 stride=2,
-                                weights_initializer=tf.contrib.layers.xavier_initializer()):
+                                weights_initializer=xavier_initializer()):
                 with slim.arg_scope([slim.batch_norm], decay=0.95,
                                     center=True, scale=True,
                                     activation_fn=tf.nn.relu,
@@ -166,43 +155,6 @@ class Hirar(object):
                     # (batch_size, 50) -> #(batch_size, )
                     net = slim.fully_connected(net, 1, scope='fc7')
                     return net
-
-    def transformer(self, features, layer=5, reuse=False):
-
-        assert layer in [1, 2, 3, 4, 5]
-        scope = 'transformer_layer_%d' % layer
-        with tf.variable_scope(scope, reuse=reuse):
-            with slim.arg_scope([slim.conv2d], padding='SAME',
-                                activation_fn=None,
-                                stride=1,
-                                weights_initializer=tf.contrib.layers.xavier_initializer()):
-                with slim.arg_scope([slim.batch_norm], decay=0.95,
-                                    center=True, scale=True,
-                                    activation_fn=tf.nn.relu,
-                                    is_training=(self.mode == 'train')):
-
-                    if layer == 5:
-                        stride = 1
-                    else:
-                        stride = 3
-
-                    depth = self.depth_dict[layer]
-                    net = slim.conv2d(features, depth,
-                                      [stride, stride],
-                                      scope='conv1')
-                    net = slim.batch_norm(net, scope='bn1')
-
-                    for i in xrange(self.skip_layers - 1):
-                        net = slim.conv2d(net, depth,
-                                          [stride, stride],
-                                          scope='conv%d' % (i + 2))
-                        net = slim.batch_norm(net,
-                                              scope='bn%d' % (i + 2))
-
-                    if self.skip:
-                        return features + net
-                    else:
-                        return net
 
     def build_model(self):
 
