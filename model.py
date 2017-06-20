@@ -11,13 +11,13 @@ class CycleEXT(object):
     def __init__(self, mode='train', learning_rate=0.0003,
                  n_classes=10, class_weight=1.0, feat_layer=5,
                  skip=True, skip_layers=2, margin=4.0,
-                 ucn_weight=1.0, loss='wass'):
+                 ucn_weight=1.0, loss_type='wass'):
 
-        assert loss in ['wass', 'cross']
+        assert loss_type in ['wass', 'cross']
         self.mode = mode
         self.margin = margin
         self.ucn_weight = ucn_weight
-        self.loss = loss
+        self.loss_type = loss_type
         self.skip = skip
         self.learning_rate = learning_rate
         self.n_classes = n_classes
@@ -90,24 +90,32 @@ class CycleEXT(object):
                                                 padding='VALID',
                                                 scope='conv_transpose1')
                     d1_ = slim.batch_norm(d1_, scope='d_bn1')
-                    d1 = slim.dropout(d1_, scope='dropout1') + e4
+                    d1 = slim.dropout(d1_, scope='dropout1')
+                    if self.skip:
+                        d1 += e4
 
                     # (batch_size, 4, 4, 512) -> (batch_size, 8, 8, 256)
                     d2_ = slim.conv2d_transpose(d1, 256, [3, 3],
                                                 scope='conv_transpose2')
                     d2_ = slim.batch_norm(d2_, scope='d_bn2')
-                    d2 = slim.dropout(d2_, scope='dropout2') + e3
+                    d2 = slim.dropout(d2_, scope='dropout2')
+                    if self.skip:
+                        d2 += e3
 
                     # (batch_size, 8, 8, 256) -> (batch_size, 16, 16, 128)
                     d3_ = slim.conv2d_transpose(d2, 128, [3, 3],
                                                 scope='conv_transpose3')
                     d3_ = slim.batch_norm(d3_, scope='d_bn3')
-                    d3 = slim.dropout(d3_, scope='dropout3') + e2
+                    d3 = slim.dropout(d3_, scope='dropout3')
+                    if self.skip:
+                        d3 += e2
 
                     # (batch_size, 16, 16, 128) -> (batch_size, 32, 32, 64)
                     d4_ = slim.conv2d_transpose(d3, 64, [3, 3],
                                                 scope='conv_transpose4')
-                    d4 = slim.batch_norm(d4_, scope='d_bn4') + e1
+                    d4 = slim.batch_norm(d4_, scope='d_bn4')
+                    if self.skip:
+                        d4 += e1
 
                     # (batch_size, 32, 32, 64) -> (batch_size, 64, 64, 3)
                     d5 = slim.conv2d_transpose(d4, 3, [3, 3],
@@ -146,7 +154,24 @@ class CycleEXT(object):
                     net = slim.conv2d(net, 512, [3, 3], scope='conv4')
                     net = slim.batch_norm(net, scope='bn4')
                     net = slim.dropout(net, scope='dropout4')
+                    if self.loss_type == 'cross':
+                        return tf.nn.sigmoid(net)
                     return net
+
+    def get_disc_loss(self, real, fake):
+        if self.loss_type == 'wass':
+            return -tf.reduce_mean(real) + tf.reduce_mean(fake)
+        else:
+            EPS = 1e-12
+            return tf.reduce_mean(-(tf.log(real + EPS)
+                                    + tf.log(1 - fake + EPS)))
+
+    def get_gen_loss(self, fake):
+        if self.loss_type == 'wass':
+            return - tf.reduce_mean(fake)
+        else:
+            EPS = 1e-12
+            return tf.reduce_mean(-tf.log(fake + EPS))
 
     def build_model(self):
 
