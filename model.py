@@ -10,12 +10,14 @@ class CycleEXT(object):
 
     def __init__(self, mode='train', learning_rate=0.0003,
                  n_classes=10, class_weight=1.0, feat_layer=5,
-                 skip=True, skip_layers=2, margin=4.0, ucn_weight=1.0):
+                 skip=True, skip_layers=2, margin=4.0,
+                 ucn_weight=1.0, loss='wass'):
 
+        assert loss in ['wass', 'cross']
         self.mode = mode
         self.margin = margin
         self.ucn_weight = ucn_weight
-        self.skip_layers = skip_layers
+        self.loss = loss
         self.skip = skip
         self.learning_rate = learning_rate
         self.n_classes = n_classes
@@ -128,32 +130,22 @@ class CycleEXT(object):
                                     is_training=(self.mode == 'train')):
 
                     # (batch, 64, 64, 3) -> (batch_size, 32, 32, 64)
-                    if layer == 0:
-                        net = slim.conv2d(net, 64, [3, 3],
-                                          scope='conv1')
-                        net = slim.batch_norm(net, scope='bn1')
+                    net = slim.conv2d(images, 64, [3, 3],
+                                      scope='conv1')
+                    net = slim.batch_norm(net, scope='bn1')
+                    net = slim.dropout(net, scope='dropout1')
                     # (batch_size, 32, 32, 64) -> (batch_size, 16, 16, 128)
-                    if layer <= 1:
-                        net = slim.conv2d(net, 128, [3, 3], scope='conv2')
-                        net = slim.batch_norm(net, scope='bn2')
+                    net = slim.conv2d(net, 128, [3, 3], scope='conv2')
+                    net = slim.batch_norm(net, scope='bn2')
+                    net = slim.dropout(net, scope='dropout2')
                     # (batch_size, 16, 16, 128) -> (batch_size, 8, 8, 256)
-                    if layer <= 2:
-                        net = slim.conv2d(net, 256, [3, 3], scope='conv3')
-                        net = slim.batch_norm(net, scope='bn3')
+                    net = slim.conv2d(net, 256, [3, 3], scope='conv3')
+                    net = slim.batch_norm(net, scope='bn3')
+                    net = slim.dropout(net, scope='dropout3')
                     # (batch_size, 8, 8, 256) -> (batch_size, 4, 4, 512)
-                    if layer <= 3:
-                        net = slim.conv2d(net, 512, [3, 3], scope='conv4')
-                        net = slim.batch_norm(net, scope='bn4')
-                    # (batch_size, 4, 4, 512) -> (batch_size, 1, 1, 512)
-                    if layer <= 4:
-                        net = slim.conv2d(net, 512, [4, 4], padding='VALID',
-                                          scope='conv5')
-                        net = slim.batch_norm(net, scope='bn5')
-                    net = slim.flatten(net)
-                    # (batch_size, 512) -> #(batch_size, 50)
-                    net = slim.fully_connected(net, 50, scope='fc6')
-                    # (batch_size, 50) -> #(batch_size, )
-                    net = slim.fully_connected(net, 1, scope='fc7')
+                    net = slim.conv2d(net, 512, [3, 3], scope='conv4')
+                    net = slim.batch_norm(net, scope='bn4')
+                    net = slim.dropout(net, scope='dropout4')
                     return net
 
     def build_model(self):
