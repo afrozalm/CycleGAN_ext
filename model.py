@@ -11,10 +11,11 @@ class CycleEXT(object):
     def __init__(self, mode='train', learning_rate=0.0003,
                  n_classes=10, class_weight=1.0, feat_layer=5,
                  skip=True, skip_layers=2, margin=4.0,
-                 ucn_weight=1.0, loss_type='wass'):
+                 ucn_weight=1.0, loss_type='wass', cyc_weight=1.0):
 
         assert loss_type in ['wass', 'cross']
         self.mode = mode
+        self.cyc_weight = cyc_weight
         self.margin = margin
         self.ucn_weight = ucn_weight
         self.loss_type = loss_type
@@ -48,6 +49,7 @@ class CycleEXT(object):
     def generator(self, images, reuse=False, scope='Real2Caric'):
 
         assert scope in ['Real2Caric', 'Caric2Real']
+        scope = 'Gen_' + scope
         # images: (batch, 64, 64, 3) or (batch, 64, 64, 1)
         if images.get_shape()[3] == 1:
             # Replicate the gray scale image 3 times.
@@ -134,6 +136,7 @@ class CycleEXT(object):
 
         # images: (batch, 64, 64, 3)
         assert scope in ['Real', 'Caric']
+        scope = 'Disc_' + scope
         with tf.variable_scope(scope, reuse=reuse):
             with slim.arg_scope([slim.conv2d], padding='SAME',
                                 activation_fn=None,
@@ -190,6 +193,9 @@ class CycleEXT(object):
         rec_caric = self.generator(images=fake_real,
                                    scope='Real2Caric',
                                    reuse=True)
+        self.rec_real = rec_real
+        self.rec_caric = rec_caric
+
         fwd_loss = rec_loss(orig=real, rec=rec_real)
         bwd_loss = rec_loss(orig=caric, rec=rec_caric)
         return fwd_loss + bwd_loss
@@ -368,170 +374,116 @@ class CycleEXT(object):
                                         'real_neg')
 
             # logits and accuracy
-            self.enc_real, self.fake_caric = self.generator(self.real_images,
-                                                            scope='Real2Caric')
-            self.enc_caric, self.fake_real = self.generator(self.caric_images,
-                                                            scope='Caric2Real')
-            self.fake_score =
-            self.pos_pair, self.neg_pair = self.get_ucn_pairs()
+            enc_real, fake_caric = self.generator(self.real_images,
+                                                  scope='Real2Caric')
+            enc_caric, fake_real = self.generator(self.caric_images,
+                                                  scope='Caric2Real')
 
-            self.logits_real = self.classifier(encodings=self.enc_real)
-            self.logits_caric = self.classifier(encodings=self.enc_caric)
+            fake_score_c = self.discriminator(images=fake_caric,
+                                              scope='Caric')
+            fake_score_r = self.discriminator(images=fake_real,
+                                              scope="Real")
+            real_score_c = self.discriminator(images=self.caric_images,
+                                              scope="Caric",
+                                              reuse=True)
+            real_score_r = self.discriminator(images=self.real_images,
+                                              scope="Real",
+                                              reuse=True)
 
-            self.labels = tf.concat([self.real_labels, self.caric_labels], 0)
-            self.logits = tf.concat([self.logits_real, self.logits_caric], 0)
+            pos_pair, neg_pair = self.get_ucn_pairs()
 
-            self.pred = tf.argmax(self.logits, 1)
-            self.correct_pred = tf.equal(self.pred,
-                                         self.labels)
-            self.accuracy = tf.reduce_mean(tf.cast(self.correct_pred,
+            logits_real = self.classifier(encodings=enc_real)
+            logits_caric = self.classifier(encodings=enc_caric)
+
+            labels = tf.concat([self.real_labels, self.caric_labels], 0)
+            logits = tf.concat([logits_real, logits_caric], 0)
+
+            pred = tf.argmax(logits, 1)
+            correct_pred = tf.equal(pred,
+                                    labels)
+            self.accuracy = tf.reduce_mean(tf.cast(correct_pred,
                                                    tf.float32))
 
-            # loss and train op
+            # losses
             self.loss_class = \
-                tf.losses.sparse_softmax_cross_entropy(self.labels,
-                                                       self.logits)
+                tf.losses.sparse_softmax_cross_entropy(labels,
+                                                       logits)
 
-            self.loss_ucn = self.get_ucn_loss(pos_encs=self.pos_pair,
-                                              neg_encs=self.neg_pair)
+            self.loss_ucn = self.get_ucn_loss(pos_encs=pos_pair,
+                                              neg_encs=neg_pair)
 
             self.loss_cycle = self.get_cycle_loss(real=self.real_images,
-                                                  fake_real=self.fake_real,
                                                   caric=self.caric_images,
-                                                  fake_caric=self.fake_caric)
+                                                  fake_real=fake_real,
+                                                  fake_caric=fake_caric)
 
-            self.loss_gen_adv = self.gan_gen_loss()
+            self.loss_gen_adv = self.gan_gen_loss(fake_score_r) \
+                + self.gan_gen_loss(fake_score_c)
 
-            self.loss_disc = self.gan_disc_loss()
+            self.loss_gen = self.loss_class * self.class_weight \
+                + self.loss_ucn * self.ucn_weight \
+                + self.loss_cycle * self.cyc_weight \
+                + self.loss_gen_adv
 
-            self.loss = self.loss_class * self.class_weight \
-                + self.loss_ucn * self.ucn_weight
-
-#---------------------------------------------------------------------------------#
-            # self.real_images = tf.placeholder(tf.float32, [None, 64, 64, 3],
-            #                                   'real_faces')
-            # self.caric_images = tf.placeholder(tf.float32, [None, 64, 64, 3],
-            #                                    'caric_faces')
-            # self.real_labels = tf.placeholder(tf.int64, [None],
-            #                                   'real_labels')
-            # self.caric_labels = tf.placeholder(tf.int64, [None],
-            #                                    'caric_labels')
-
-            # encodings, transformations and reconstructions
-            # self.real_enc, _ = self.encoder(self.real_images,
-            #                                 scope_suffix='real')
-            # self.caric_enc, self.caric_logits = self.encoder(self.caric_images,
-            #                                                  scope_suffix='caric')
-
-            # self.reconst_caric = self.decoder(inputs=self.caric_enc[self.feat_layer - 1],
-            #                                   layer=self.feat_layer,
-            #                                   scope_suffix='caric')
-            # self.trans_real_feat = self.transformer(features=self.real_enc[self.feat_layer - 1],
-            #                                         layer=self.feat_layer)
-            # self.trans_reconst = self.decoder(inputs=self.trans_real_feat,
-            #                                   reuse=True,
-            #                                   layer=self.feat_layer,
-            #                                   scope_suffix='caric')
-            # _, self.reconst_logits = self.encoder(self.trans_reconst,
-            #                                       scope_suffix='caric',
-            #                                       reuse=True)
-
-            # discriminator scores
-            # self.pos_class = self.discriminator(features=self.caric_enc[self.feat_layer - 1],
-            #                                     layer=self.feat_layer)
-            # self.neg_class = self.discriminator(features=self.trans_real_feat,
-            #                                     layer=self.feat_layer,
-            #                                     reuse=True)
-            # self.reconst_score = self.discriminator(features=self.trans_reconst,
-            #                                         layer=0)
-            # self.caric_score = self.discriminator(features=self.caric_images,
-            #                                       layer=0,
-            #                                       reuse=True)
-
-            # accuracy
-            # self.pred = tf.argmax(self.reconst_logits, 1)
-            # self.correct_pred = tf.equal(self.pred,
-            #                              self.real_labels)
-            # self.trans_accr = tf.reduce_mean(tf.cast(
-            #     self.correct_pred, tf.float32))
-
-            # loss_decoder
-            # self.loss_decoder = tf.reduce_mean(tf.losses.absolute_difference(
-            #     self.reconst_caric, self.caric_images))
-
-            # classification_loss
-            # self.loss_class = \
-            #     tf.losses.sparse_softmax_cross_entropy(self.real_labels,
-            #                                            self.reconst_logits) \
-            #     + tf.losses.sparse_softmax_cross_entropy(self.caric_labels,
-            #                                              self.caric_logits)
-            # adversarial_loss
-            # self.loss_disc = -tf.reduce_mean(self.pos_class
-            #                                  - self.neg_class) \
-            #     - tf.reduce_mean(self.caric_score -
-            #                      self.reconst_score)
-            # self.loss_gen = - tf.reduce_mean(self.neg_class) \
-            #     - tf.reduce_mean(self.reconst_score)
-
-            # transformer_loss
-            # self.loss_transformer = self.loss_gen \
-            #     + self.loss_class * self.class_weight
+            self.loss_disc = self.gan_disc_loss(real_score_r, fake_score_r) \
+                + self.gan_disc_loss(real_score_c, fake_score_c)
 
             # optimizer
-            # self.dec_opt = tf.train.RMSPropOptimizer(self.learning_rate)
-            # self.disc_opt = tf.train.RMSPropOptimizer(self.learning_rate)
-            # self.trans_opt = tf.train.RMSPropOptimizer(self.learning_rate)
+            self.gen_opt = tf.train.RMSPropOptimizer(self.learning_rate)
+            self.disc_opt = tf.train.RMSPropOptimizer(self.learning_rate)
 
             # model variables
-            # all_vars = tf.trainable_variables()
-            # disc_vars = \
-            #     [var for var in all_vars if 'discriminator' in var.name]
-            # trans_vars = \
-            #     [var for var in all_vars if 'transformer' in var.name]
-            # dec_vars = \
-            #     [var for var in all_vars if 'decoder_caric' in var.name]
+            all_vars = tf.trainable_variables()
+            disc_vars = \
+                [var for var in all_vars if 'Disc_' in var.name]
+            gen_vars = \
+                [var for var in all_vars if 'Gen_' in var.name]
 
             # train op
-            # with tf.variable_scope('train_op', reuse=False):
-            #     self.disc_op = slim.learning.create_train_op(
-            #         self.loss_disc,
-            #         self.disc_opt,
-            #         variables_to_train=disc_vars,
-            #         clip_gradient_norm=0.01)
-            #     self.trans_op = slim.learning.create_train_op(
-            #         self.loss_transformer,
-            #         self.trans_opt,
-            #         variables_to_train=trans_vars)
-            #     self.dec_op = slim.learning.create_train_op(
-            #         self.loss_decoder,
-            #         self.dec_opt,
-            #         variables_to_train=dec_vars)
+            with tf.variable_scope('train_op', reuse=False):
+                self.disc_op = slim.learning.create_train_op(
+                    self.loss_disc,
+                    self.disc_opt,
+                    variables_to_train=disc_vars,
+                    clip_gradient_norm=0.01)
+                self.gen_op = slim.learning.create_train_op(
+                    self.loss_gen,
+                    self.gen_opt,
+                    variables_to_train=gen_vars)
 
             # summary op
-            # gen_loss_summary = tf.summary.scalar('gen_loss',
-            #                                      self.loss_gen)
-            # dec_loss_summary = tf.summary.scalar('loss_dec',
-            #                                      self.loss_decoder)
-            # accuracy_summary = tf.summary.scalar('trans_accr',
-            #                                      self.trans_accr)
-            # disc_loss_summary = tf.summary.scalar('disc_loss',
-            #                                       self.loss_disc)
-            # trans_loss_summary = tf.summary.scalar('transformer_loss',
-            #                                        self.loss_transformer)
-            # real_images_summary = tf.summary.image('real_images',
-            #                                        self.real_images)
-            # caric_images_summary = tf.summary.image('caric_images',
-            #                                         self.caric_images)
-            # trans_reconst_summary = tf.summary.image('trans_reconst',
-            #                                          self.trans_reconst)
-            # caric_reconst_summary = tf.summary.image('caric_reconst',
-            #                                          self.reconst_caric)
-            # self.summary_op = tf.summary.merge([gen_loss_summary,
-            #                                     dec_loss_summary,
-            #                                     accuracy_summary,
-            #                                     disc_loss_summary,
-            #                                     trans_loss_summary,
-            #                                     real_images_summary,
-            #                                     caric_images_summary,
-            #                                     trans_reconst_summary,
-            #                                     caric_reconst_summary])
+            gen_loss_summary = tf.summary.scalar('gen_loss',
+                                                 self.loss_gen)
+            accuracy_summary = tf.summary.scalar('accuracy',
+                                                 self.accuracy)
+            disc_loss_summary = tf.summary.scalar('disc_loss',
+                                                  self.loss_disc)
+            ucn_loss_summary = tf.summary.scalar('ucn_loss',
+                                                 self.loss_ucn)
+            cyc_loss_summary = tf.summary.scalar('ucn_loss',
+                                                 self.loss_cycle)
+            real_images_summary = tf.summary.image('real_images',
+                                                   self.real_images)
+            caric_images_summary = tf.summary.image('caric_images',
+                                                    self.caric_images)
+            fake_real_img_summ = tf.summary.image('real2caric',
+                                                  fake_real)
+            fake_caric_img_summ = tf.summary.image('caric2real',
+                                                   fake_caric)
+            rec_real_img_summ = tf.summary.image('reconst_real',
+                                                 self.rec_real)
+            rec_caric_img_summ = tf.summary.image('reconst_caric',
+                                                  self.rec_caric)
+            self.summary_op = tf.summary.merge([
+                gen_loss_summary,
+                ucn_loss_summary,
+                cyc_loss_summary,
+                fake_real_img_summ,
+                fake_caric_img_summ,
+                rec_caric_img_summ,
+                rec_real_img_summ,
+                accuracy_summary,
+                disc_loss_summary,
+                real_images_summary,
+                caric_images_summary,
+            ])
