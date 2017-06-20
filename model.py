@@ -180,19 +180,19 @@ class CycleEXT(object):
             EPS = 1e-12
             return tf.reduce_mean(-tf.log(fake_score + EPS))
 
-    def rec_loss(self, orig, rec):
-        return tf.reduce_mean(tf.losses.absolute_difference(orig, rec))
+    def get_cycle_loss(self, real, fake_real, caric, fake_caric):
+        def rec_loss(orig, rec):
+            return tf.reduce_mean(tf.losses.absolute_difference(orig, rec))
 
-    def cycle_loss(self, real, fake_real, caric, fake_caric):
         rec_real = self.generator(images=real,
                                   scope='Real2Caric')
         rec_caric = self.generator(images=caric,
                                    scope='Caric2Real')
-        fwd_loss = self.rec_loss(orig=real, rec=rec_real)
-        bwd_loss = self.rec_loss(orig=caric, rec=rec_caric)
+        fwd_loss = rec_loss(orig=real, rec=rec_real)
+        bwd_loss = rec_loss(orig=caric, rec=rec_caric)
         return fwd_loss + bwd_loss
 
-    def ucn_loss(self, pos_encs, neg_encs):
+    def get_ucn_loss(self, pos_encs, neg_encs):
         pos_loss = tf.reduce_mean(tf.square(pos_encs[0] - pos_encs[1]))
         neg_diff = tf.reduce_mean(tf.square(neg_encs[0] - neg_encs[1]))
         neg_loss = tf.maximum(0., self.margin - neg_diff)
@@ -209,25 +209,68 @@ class CycleEXT(object):
                                               'real_labels')
             self.caric_labels = tf.placeholder(tf.int64, [None],
                                                'caric_labels')
-            self.pos_ones = tf.placeholder(tf.float32, [None, 64, 64, 3],
-                                           'positive_pair_one')
-            self.pos_twos = tf.placeholder(tf.float32, [None, 64, 64, 3],
-                                           'positive_pair_two')
-            self.neg_ones = tf.placeholder(tf.float32, [None, 64, 64, 3],
-                                           'negative_pair_one')
-            self.neg_twos = tf.placeholder(tf.float32, [None, 64, 64, 3],
-                                           'negative_pair_two')
+
+            '''
+            how to form pairs:
+                positive: c_base<->c_pos, r_base<->r_pos,
+                          c_base<->r_base, c_pos<->r_pos,
+                          c_base<->r_pos, c_pos<->r_base
+                negative: c_base<->c_neg, r_base<->r_neg,
+                          c_neg<->r_neg
+            '''
+            self.c_base = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                         'caric_base')
+            self.c_pos = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                        'caric_pos')
+            self.c_neg = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                        'caric_neg')
+            self.r_base = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                         'real_base')
+            self.r_pos = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                        'real_pos')
+            self.r_neg = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                        'real_neg')
 
             # logits and accuracy
             self.enc_real, _ = self.generator(self.real_images,
                                               scope='Real2Caric')
             self.enc_caric, _ = self.generator(self.caric_images,
                                                scope='Caric2Real')
+            enc_c_base, _ = self.generator(self.c_base,
+                                           scope='Caric2Real',
+                                           reuse=True)
+            enc_c_pos, _ = self.generator(self.c_pos,
+                                          scope='Caric2Real',
+                                          reuse=True)
+            enc_c_neg, _ = self.generator(self.c_neg,
+                                          scope='Caric2Real',
+                                          reuse=True)
+            enc_r_base, _ = self.generator(self.r_base,
+                                           scope='Real2Caric',
+                                           reuse=True)
+            enc_r_pos, _ = self.generator(self.r_pos,
+                                          scope='Real2Caric',
+                                          reuse=True)
+            enc_r_neg, _ = self.generator(self.r_neg,
+                                          scope="Real2Caric",
+                                          reuse=True)
+
             self.logits_real = self.classifier(encodings=self.enc_real)
             self.logits_caric = self.classifier(encodings=self.enc_caric)
 
             self.labels = tf.concat([self.real_labels, self.caric_labels], 0)
             self.logits = tf.concat([self.logits_real, self.logits_caric], 0)
+
+            self.pos_pair_one = tf.concat([enc_c_base, enc_r_base, enc_c_pos,
+                                           enc_c_base, enc_r_pos, enc_c_pos],
+                                          0)
+            self.pos_pair_two = tf.concat([enc_c_pos, enc_r_pos, enc_r_pos,
+                                           enc_r_base, enc_c_base, enc_r_base],
+                                          0)
+            self.neg_pair_one = tf.concat([enc_c_base, enc_r_base, enc_r_neg],
+                                          0)
+            self.neg_pair_two = tf.concat([enc_c_neg, enc_r_neg, enc_c_neg],
+                                          0)
 
             self.pred = tf.argmax(self.logits, 1)
             self.correct_pred = tf.equal(self.pred,
@@ -235,59 +278,54 @@ class CycleEXT(object):
             self.accuracy = tf.reduce_mean(tf.cast(self.correct_pred,
                                                    tf.float32))
 
-            # -----------------------------------#
-
             # loss and train op
-
             self.loss_class = \
                 tf.losses.sparse_softmax_cross_entropy(self.labels,
                                                        self.logits)
+            self.loss_ucn = self.get_ucn_loss(pos_encs=[self.pos_pair_one,
+                                                        self.pos_pair_two],
+                                              neg_encs=[self.neg_pair_one,
+                                                        self.neg_pair_two])
 
             self.loss = self.loss_class * self.class_weight \
-                + self.loss_reconst
+                + self.loss_ucn * self.ucn_weight
             self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
             self.train_op = slim.learning.create_train_op(self.loss,
                                                           self.optimizer,
                                                           clip_gradient_norm=1)
+            # -----------------------------------#
 
             # summary op
-            loss_reconst_summary = tf.summary.scalar('reconstruction_loss',
-                                                     self.loss_reconst)
-            loss_reconst_real_summ = tf.summary.scalar('reconstruction_real',
-                                                       self.loss_reconst_real)
-            loss_reconst_caric_summ = tf.summary.scalar('reconstruction_caric',
-                                                        self.loss_reconst_caric)
+            loss_ucn_summary = tf.summary.scalar('ucn loss',
+                                                 self.loss_ucn)
             loss_class_summary = tf.summary.scalar('classification_loss',
                                                    self.loss_class)
             loss_summary = tf.summary.scalar('combined loss',
                                              self.loss)
             accuracy_summary = tf.summary.scalar('accuracy',
                                                  self.accuracy)
-            fake_accuracy_summary = tf.summary.scalar('fake_accuracy',
-                                                      self.fake_accuracy)
 
-            reconst_real_2 = tf.summary.image('reconst_real_2',
-                                              self.reconst_reals[1])
-            reconst_real_5 = tf.summary.image('reconst_real_5',
-                                              self.reconst_reals[4])
-            reconst_caric_2 = tf.summary.image('reconst_caric_2',
-                                               self.reconst_carics[1])
-            reconst_caric_5 = tf.summary.image('reconst_caric_5',
-                                               self.reconst_carics[4])
-            caric_image_summary = tf.summary.image('caric_images',
-                                                   self.caric_images)
-            self.summary_op = tf.summary.merge([loss_summary,
-                                                loss_reconst_summary,
-                                                loss_reconst_caric_summ,
-                                                loss_reconst_real_summ,
-                                                loss_class_summary,
-                                                reconst_caric_2,
-                                                reconst_caric_5,
-                                                reconst_real_2,
-                                                reconst_real_5,
-                                                caric_image_summary,
-                                                accuracy_summary,
-                                                fake_accuracy_summary])
+            c_base_summ = tf.summary.image('caric bases',
+                                           self.c_base)
+            r_base_summ = tf.summary.image('real bases',
+                                           self.r_base)
+            c_pos_summ = tf.summary.image('caric pos', self.c_pos)
+            c_neg_summ = tf.summary.image('caric neg', self.c_neg)
+            r_pos_summ = tf.summary.image('real pos', self.r_pos)
+            r_neg_summ = tf.summary.image('real neg', self.r_neg)
+
+            self.summary_op = tf.summary.merge([
+                loss_summary,
+                loss_class_summary,
+                loss_ucn_summary,
+                c_base_summ,
+                r_base_summ,
+                c_pos_summ,
+                c_neg_summ,
+                r_pos_summ,
+                r_neg_summ,
+                accuracy_summary
+            ])
 
         elif self.mode == 'eval':
             self.images = tf.placeholder(tf.float32, [None, 64, 64, 3],
