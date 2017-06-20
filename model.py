@@ -185,6 +185,11 @@ class CycleEXT(object):
         bwd_loss = self.rec_loss(orig=caric, rec=rec_caric)
         return fwd_loss + bwd_loss
 
+    def ucn_loss(self, pos_encs, neg_encs):
+        pos_loss = tf.reduce_mean(tf.square(pos_encs[0] - pos_encs[1]))
+        neg_loss = tf.reduce_mean(tf.square(neg_encs[0] - neg_encs[1]))
+        return pos_loss + neg_loss
+
     def build_model(self):
 
         if self.mode == 'pretrain':
