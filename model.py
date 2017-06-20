@@ -158,20 +158,32 @@ class CycleEXT(object):
                         return tf.nn.sigmoid(net)
                     return net
 
-    def get_disc_loss(self, real, fake):
+    def gan_disc_loss(self, real_score, fake_score):
         if self.loss_type == 'wass':
-            return -tf.reduce_mean(real) + tf.reduce_mean(fake)
+            return -tf.reduce_mean(real_score) + tf.reduce_mean(fake_score)
         else:
             EPS = 1e-12
-            return tf.reduce_mean(-(tf.log(real + EPS)
-                                    + tf.log(1 - fake + EPS)))
+            return tf.reduce_mean(-(tf.log(real_score + EPS)
+                                    + tf.log(1 - fake_score + EPS)))
 
-    def get_gen_loss(self, fake):
+    def gan_gen_loss(self, fake_score):
         if self.loss_type == 'wass':
-            return - tf.reduce_mean(fake)
+            return - tf.reduce_mean(fake_score)
         else:
             EPS = 1e-12
-            return tf.reduce_mean(-tf.log(fake + EPS))
+            return tf.reduce_mean(-tf.log(fake_score + EPS))
+
+    def rec_loss(self, orig, rec):
+        return tf.reduce_mean(tf.losses.absolute_difference(orig, rec))
+
+    def cycle_loss(self, real, fake_real, caric, fake_caric):
+        rec_real = self.generator(images=real,
+                                  scope='Real2Caric')
+        rec_caric = self.generator(images=caric,
+                                   scope='Caric2Real')
+        fwd_loss = self.rec_loss(orig=real, rec=rec_real)
+        bwd_loss = self.rec_loss(orig=caric, rec=rec_caric)
+        return fwd_loss + bwd_loss
 
     def build_model(self):
 
