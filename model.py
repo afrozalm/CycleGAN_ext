@@ -184,10 +184,12 @@ class CycleEXT(object):
         def rec_loss(orig, rec):
             return tf.reduce_mean(tf.losses.absolute_difference(orig, rec))
 
-        rec_real = self.generator(images=real,
-                                  scope='Real2Caric')
-        rec_caric = self.generator(images=caric,
-                                   scope='Caric2Real')
+        rec_real = self.generator(images=fake_caric,
+                                  scope='Caric2Real',
+                                  reuse=True)
+        rec_caric = self.generator(images=fake_real,
+                                   scope='Real2Caric',
+                                   reuse=True)
         fwd_loss = rec_loss(orig=real, rec=rec_real)
         bwd_loss = rec_loss(orig=caric, rec=rec_caric)
         return fwd_loss + bwd_loss
@@ -197,6 +199,48 @@ class CycleEXT(object):
         neg_diff = tf.reduce_mean(tf.square(neg_encs[0] - neg_encs[1]))
         neg_loss = tf.maximum(0., self.margin - neg_diff)
         return pos_loss + neg_loss
+
+    def get_ucn_pairs(self):
+        '''
+        how to form pairs:
+            positive: c_base<->c_pos, r_base<->r_pos,
+                      c_base<->r_base, c_pos<->r_pos,
+                      c_base<->r_pos, c_pos<->r_base
+            negative: c_base<->c_neg, r_base<->r_neg,
+                      c_neg<->r_neg
+        '''
+        enc_c_base, _ = self.generator(self.c_base,
+                                       scope='Caric2Real',
+                                       reuse=True)
+        enc_c_pos, _ = self.generator(self.c_pos,
+                                      scope='Caric2Real',
+                                      reuse=True)
+        enc_c_neg, _ = self.generator(self.c_neg,
+                                      scope='Caric2Real',
+                                      reuse=True)
+        enc_r_base, _ = self.generator(self.r_base,
+                                       scope='Real2Caric',
+                                       reuse=True)
+        enc_r_pos, _ = self.generator(self.r_pos,
+                                      scope='Real2Caric',
+                                      reuse=True)
+        enc_r_neg, _ = self.generator(self.r_neg,
+                                      scope="Real2Caric",
+                                      reuse=True)
+
+        pos_pair_one = tf.concat([enc_c_base, enc_r_base, enc_c_pos,
+                                  enc_c_base, enc_r_pos, enc_c_pos],
+                                 0)
+        pos_pair_two = tf.concat([enc_c_pos, enc_r_pos, enc_r_pos,
+                                  enc_r_base, enc_c_base, enc_r_base],
+                                 0)
+        neg_pair_one = tf.concat([enc_c_base, enc_r_base, enc_r_neg],
+                                 0)
+        neg_pair_two = tf.concat([enc_c_neg, enc_r_neg, enc_c_neg],
+                                 0)
+        pos_pair = [pos_pair_one, pos_pair_two]
+        neg_pair = [neg_pair_one, neg_pair_two]
+        return pos_pair, neg_pair
 
     def build_model(self):
 
@@ -210,14 +254,6 @@ class CycleEXT(object):
             self.caric_labels = tf.placeholder(tf.int64, [None],
                                                'caric_labels')
 
-            '''
-            how to form pairs:
-                positive: c_base<->c_pos, r_base<->r_pos,
-                          c_base<->r_base, c_pos<->r_pos,
-                          c_base<->r_pos, c_pos<->r_base
-                negative: c_base<->c_neg, r_base<->r_neg,
-                          c_neg<->r_neg
-            '''
             self.c_base = tf.placeholder(tf.float32, [None, 64, 64, 3],
                                          'caric_base')
             self.c_pos = tf.placeholder(tf.float32, [None, 64, 64, 3],
@@ -236,41 +272,13 @@ class CycleEXT(object):
                                               scope='Real2Caric')
             self.enc_caric, _ = self.generator(self.caric_images,
                                                scope='Caric2Real')
-            enc_c_base, _ = self.generator(self.c_base,
-                                           scope='Caric2Real',
-                                           reuse=True)
-            enc_c_pos, _ = self.generator(self.c_pos,
-                                          scope='Caric2Real',
-                                          reuse=True)
-            enc_c_neg, _ = self.generator(self.c_neg,
-                                          scope='Caric2Real',
-                                          reuse=True)
-            enc_r_base, _ = self.generator(self.r_base,
-                                           scope='Real2Caric',
-                                           reuse=True)
-            enc_r_pos, _ = self.generator(self.r_pos,
-                                          scope='Real2Caric',
-                                          reuse=True)
-            enc_r_neg, _ = self.generator(self.r_neg,
-                                          scope="Real2Caric",
-                                          reuse=True)
+            self.pos_pair, self.neg_pair = self.get_ucn_pairs()
 
             self.logits_real = self.classifier(encodings=self.enc_real)
             self.logits_caric = self.classifier(encodings=self.enc_caric)
 
             self.labels = tf.concat([self.real_labels, self.caric_labels], 0)
             self.logits = tf.concat([self.logits_real, self.logits_caric], 0)
-
-            self.pos_pair_one = tf.concat([enc_c_base, enc_r_base, enc_c_pos,
-                                           enc_c_base, enc_r_pos, enc_c_pos],
-                                          0)
-            self.pos_pair_two = tf.concat([enc_c_pos, enc_r_pos, enc_r_pos,
-                                           enc_r_base, enc_c_base, enc_r_base],
-                                          0)
-            self.neg_pair_one = tf.concat([enc_c_base, enc_r_base, enc_r_neg],
-                                          0)
-            self.neg_pair_two = tf.concat([enc_c_neg, enc_r_neg, enc_c_neg],
-                                          0)
 
             self.pred = tf.argmax(self.logits, 1)
             self.correct_pred = tf.equal(self.pred,
@@ -282,10 +290,8 @@ class CycleEXT(object):
             self.loss_class = \
                 tf.losses.sparse_softmax_cross_entropy(self.labels,
                                                        self.logits)
-            self.loss_ucn = self.get_ucn_loss(pos_encs=[self.pos_pair_one,
-                                                        self.pos_pair_two],
-                                              neg_encs=[self.neg_pair_one,
-                                                        self.neg_pair_two])
+            self.loss_ucn = self.get_ucn_loss(pos_encs=self.pos_pair,
+                                              neg_encs=self.neg_pair)
 
             self.loss = self.loss_class * self.class_weight \
                 + self.loss_ucn * self.ucn_weight
@@ -293,7 +299,6 @@ class CycleEXT(object):
             self.train_op = slim.learning.create_train_op(self.loss,
                                                           self.optimizer,
                                                           clip_gradient_norm=1)
-            # -----------------------------------#
 
             # summary op
             loss_ucn_summary = tf.summary.scalar('ucn loss',
@@ -309,10 +314,14 @@ class CycleEXT(object):
                                            self.c_base)
             r_base_summ = tf.summary.image('real bases',
                                            self.r_base)
-            c_pos_summ = tf.summary.image('caric pos', self.c_pos)
-            c_neg_summ = tf.summary.image('caric neg', self.c_neg)
-            r_pos_summ = tf.summary.image('real pos', self.r_pos)
-            r_neg_summ = tf.summary.image('real neg', self.r_neg)
+            c_pos_summ = tf.summary.image('caric pos',
+                                          self.c_pos)
+            c_neg_summ = tf.summary.image('caric neg',
+                                          self.c_neg)
+            r_pos_summ = tf.summary.image('real pos',
+                                          self.r_pos)
+            r_neg_summ = tf.summary.image('real neg',
+                                          self.r_neg)
 
             self.summary_op = tf.summary.merge([
                 loss_summary,
@@ -345,16 +354,59 @@ class CycleEXT(object):
             self.caric_labels = tf.placeholder(tf.int64, [None],
                                                'caric_labels')
 
+            self.c_base = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                         'caric_base')
+            self.c_pos = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                        'caric_pos')
+            self.c_neg = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                        'caric_neg')
+            self.r_base = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                         'real_base')
+            self.r_pos = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                        'real_pos')
+            self.r_neg = tf.placeholder(tf.float32, [None, 64, 64, 3],
+                                        'real_neg')
+
             # logits and accuracy
             self.enc_real, self.fake_caric = self.generator(self.real_images,
                                                             scope='Real2Caric')
             self.enc_caric, self.fake_real = self.generator(self.caric_images,
                                                             scope='Caric2Real')
+            self.fake_score =
+            self.pos_pair, self.neg_pair = self.get_ucn_pairs()
+
             self.logits_real = self.classifier(encodings=self.enc_real)
             self.logits_caric = self.classifier(encodings=self.enc_caric)
 
             self.labels = tf.concat([self.real_labels, self.caric_labels], 0)
             self.logits = tf.concat([self.logits_real, self.logits_caric], 0)
+
+            self.pred = tf.argmax(self.logits, 1)
+            self.correct_pred = tf.equal(self.pred,
+                                         self.labels)
+            self.accuracy = tf.reduce_mean(tf.cast(self.correct_pred,
+                                                   tf.float32))
+
+            # loss and train op
+            self.loss_class = \
+                tf.losses.sparse_softmax_cross_entropy(self.labels,
+                                                       self.logits)
+
+            self.loss_ucn = self.get_ucn_loss(pos_encs=self.pos_pair,
+                                              neg_encs=self.neg_pair)
+
+            self.loss_cycle = self.get_cycle_loss(real=self.real_images,
+                                                  fake_real=self.fake_real,
+                                                  caric=self.caric_images,
+                                                  fake_caric=self.fake_caric)
+
+            self.loss_gen_adv = self.gan_gen_loss()
+
+            self.loss_disc = self.gan_disc_loss()
+
+            self.loss = self.loss_class * self.class_weight \
+                + self.loss_ucn * self.ucn_weight
+
 #---------------------------------------------------------------------------------#
             # self.real_images = tf.placeholder(tf.float32, [None, 64, 64, 3],
             #                                   'real_faces')
