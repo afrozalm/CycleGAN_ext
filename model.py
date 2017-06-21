@@ -26,10 +26,7 @@ class CycleEXT(object):
 
     def classifier(self, encodings, reuse=False):
         with tf.variable_scope('classifier', reuse=reuse):
-            with slim.arg_scope([slim.conv2d], padding='SAME',
-                                activation_fn=None,
-                                stride=2,
-                                weights_initializer=xavier_initializer(),
+            with slim.arg_scope([slim.fully_connected, slim.dropout],
                                 is_training=self.mode in ['train',
                                                           'pretrain']):
 
