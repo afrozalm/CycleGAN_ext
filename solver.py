@@ -224,6 +224,10 @@ class Solver(object):
         caric_images, caric_labels = self.load_caric(self.caric_dir,
                                                      split='train')
 
+        combined_images = self.load_combined()
+        labels = np.hstack((real_labels, caric_labels))
+        label_set = set(labels)
+
         self.loader.add_dataset('real_images', real_images)
         self.loader.add_dataset('caric_images', caric_images)
         self.loader.add_dataset('real_labels', real_labels)
@@ -261,29 +265,33 @@ class Solver(object):
                     self.loader.next_group_batch('real')
                 caric_labels, caric_images = \
                     self.loader.next_group_batch('caric')
-
+                cb, cp, cn, rb, rp, rn = self.get_pairs(combined_images,
+                                                        label_set)
                 feed_dict = {model.real_images: real_images,
                              model.real_labels: real_labels,
+                             model.caric_images: caric_images,
                              model.caric_labels: caric_labels,
-                             model.caric_images: caric_images}
+                             model.c_base: cb,
+                             model.c_pos: cp,
+                             model.c_neg: cn,
+                             model.r_base: rb,
+                             model.r_pos: rp,
+                             model.r_neg: rn}
 
                 for _ in xrange(self.disc_rep):
                     sess.run(model.disc_op, feed_dict)
                 for _ in xrange(self.gen_rep):
-                    sess.run([model.trans_op, model.dec_op], feed_dict)
+                    sess.run(model.gen_op, feed_dict)
 
                 if (step + 1) % 10 == 0:
-                    summary, discl, trl, decl, gl = \
+                    summary, discl, gl = \
                         sess.run([model.summary_op,
                                   model.loss_disc,
-                                  model.loss_transformer,
-                                  model.loss_decoder,
                                   model.loss_gen],
                                  feed_dict)
                     summary_writer.add_summary(summary, step)
-                    print ('[Source] step: [%d/%d] disc_loss: [%.6f] \
-trans_loss: [%.6f] dec_loss: [%.6f] gen_loss: [%.6f]'
-                           % (step + 1, self.train_iter, discl, trl, decl, gl))
+                    print ('[Source] step: [%d/%d] disc_loss: [%.6f] gen_loss: [%.6f]'
+                           % (step + 1, self.train_iter, discl, gl))
 
                 if (step + 1) % 200 == 0:
                     saver.save(sess, os.path.join(
@@ -295,7 +303,7 @@ trans_loss: [%.6f] dec_loss: [%.6f] gen_loss: [%.6f]'
                         # train model for source domain S
                         batch_images = self.loader.next_batch('real_images')
                         feed_dict = {model.real_images: batch_images}
-                        sampled_batch_images = sess.run(model.trans_reconst,
+                        sampled_batch_images = sess.run(model.fake_caric,
                                                         feed_dict)
 
                         # merge and save source images and sampled target image

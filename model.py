@@ -425,6 +425,7 @@ class CycleEXT(object):
                 + self.gan_disc_loss(real_score_c, fake_score_c)
 
             self.loss = self.loss_gen + self.loss_disc
+            self.fake_caric = fake_caric
 
             # optimizer
             self.gen_opt = tf.train.RMSPropOptimizer(self.learning_rate)
