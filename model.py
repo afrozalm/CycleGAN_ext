@@ -275,7 +275,8 @@ class CycleEXT(object):
             self.pos_pair, self.neg_pair = self.get_ucn_pairs()
 
             self.logits_real = self.classifier(encodings=self.enc_real)
-            self.logits_caric = self.classifier(encodings=self.enc_caric)
+            self.logits_caric = self.classifier(encodings=self.enc_caric,
+                                                reuse=True)
 
             self.labels = tf.concat([self.real_labels, self.caric_labels], 0)
             self.logits = tf.concat([self.logits_real, self.logits_caric], 0)
@@ -387,7 +388,8 @@ class CycleEXT(object):
             pos_pair, neg_pair = self.get_ucn_pairs()
 
             logits_real = self.classifier(encodings=enc_real)
-            logits_caric = self.classifier(encodings=enc_caric)
+            logits_caric = self.classifier(encodings=enc_caric,
+                                           reuse=True)
 
             labels = tf.concat([self.real_labels, self.caric_labels], 0)
             logits = tf.concat([logits_real, logits_caric], 0)
