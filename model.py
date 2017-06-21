@@ -9,9 +9,9 @@ class CycleEXT(object):
     '''
 
     def __init__(self, mode='train', learning_rate=0.0003,
-                 n_classes=10, class_weight=1.0,
-                 skip_layers=2, margin=4.0, cyc_weight=1.0,
-                 skip=True, ucn_weight=1.0, loss_type='wass'):
+                 n_classes=10, class_weight=1.0, skip=True,
+                 margin=4.0, cyc_weight=1.0, loss_type='wass',
+                 ucn_weight=1.0):
 
         assert loss_type in ['wass', 'cross']
         self.mode = mode
