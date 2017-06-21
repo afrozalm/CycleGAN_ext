@@ -26,7 +26,7 @@ class CycleEXT(object):
 
     def classifier(self, encodings, reuse=False):
         with tf.variable_scope('classifier', reuse=reuse):
-            with slim.arg_scope([slim.fully_connected, slim.dropout],
+            with slim.arg_scope([slim.dropout],
                                 is_training=self.mode in ['train',
                                                           'pretrain']):
 
@@ -456,15 +456,15 @@ class CycleEXT(object):
                                                   self.loss_disc)
             ucn_loss_summary = tf.summary.scalar('ucn_loss',
                                                  self.loss_ucn)
-            cyc_loss_summary = tf.summary.scalar('ucn_loss',
+            cyc_loss_summary = tf.summary.scalar('cycle_loss',
                                                  self.loss_cycle)
             real_images_summary = tf.summary.image('real_images',
                                                    self.real_images)
             caric_images_summary = tf.summary.image('caric_images',
                                                     self.caric_images)
-            fake_real_img_summ = tf.summary.image('real2caric',
+            fake_real_img_summ = tf.summary.image('caric2real',
                                                   fake_real)
-            fake_caric_img_summ = tf.summary.image('caric2real',
+            fake_caric_img_summ = tf.summary.image('real2caric',
                                                    fake_caric)
             rec_real_img_summ = tf.summary.image('reconst_real',
                                                  self.rec_real)
