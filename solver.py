@@ -244,8 +244,8 @@ class Solver(object):
             tf.global_variables_initializer().run()
 
             # restore variables of F and G
-            pretrained_scopes = ['encoder_caric', 'encoder_real',
-                                 'decoder_caric']
+            pretrained_scopes = ['Gen_Real2Caric', 'Gen_Caric2Real',
+                                 'classifier']
             print ('loading pretrained model ..')
             for scope in pretrained_scopes:
                 variables_to_restore = \
@@ -298,7 +298,7 @@ class Solver(object):
                         self.model_save_path, 'cycle'), global_step=step + 1)
                     print ('model/cycle-%d saved' % (step + 1))
 
-                if (step + 1) % 5000 == 0:
+                if (step + 1) % 2000 == 0:
                     for i in range(self.sample_iter):
                         # train model for source domain S
                         batch_images = self.loader.next_batch('real_images')

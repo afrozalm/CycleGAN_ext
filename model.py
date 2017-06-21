@@ -181,12 +181,12 @@ class CycleEXT(object):
         def rec_loss(orig, rec):
             return tf.reduce_mean(tf.losses.absolute_difference(orig, rec))
 
-        rec_real = self.generator(images=fake_caric,
-                                  scope='Caric2Real',
-                                  reuse=True)
-        rec_caric = self.generator(images=fake_real,
-                                   scope='Real2Caric',
-                                   reuse=True)
+        _, rec_real = self.generator(images=fake_caric,
+                                     scope='Caric2Real',
+                                     reuse=True)
+        _, rec_caric = self.generator(images=fake_real,
+                                      scope='Real2Caric',
+                                      reuse=True)
         self.rec_real = rec_real
         self.rec_caric = rec_caric
 
