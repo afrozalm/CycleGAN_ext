@@ -9,9 +9,9 @@ class CycleEXT(object):
     '''
 
     def __init__(self, mode='train', learning_rate=0.0003,
-                 n_classes=10, class_weight=1.0, feat_layer=5,
-                 skip=True, skip_layers=2, margin=4.0,
-                 ucn_weight=1.0, loss_type='wass', cyc_weight=1.0):
+                 n_classes=10, class_weight=1.0,
+                 skip_layers=2, margin=4.0, cyc_weight=1.0,
+                 skip=True, ucn_weight=1.0, loss_type='wass'):
 
         assert loss_type in ['wass', 'cross']
         self.mode = mode
@@ -23,12 +23,6 @@ class CycleEXT(object):
         self.learning_rate = learning_rate
         self.n_classes = n_classes
         self.class_weight = class_weight
-        self.feat_layer = feat_layer
-        self.depth_dict = {1: 64,
-                           2: 128,
-                           3: 256,
-                           4: 512,
-                           5: 512}
 
     def classifier(self, encodings, reuse=False):
         with tf.variable_scope('classifier', reuse=reuse):
@@ -427,6 +421,8 @@ class CycleEXT(object):
 
             self.loss_disc = self.gan_disc_loss(real_score_r, fake_score_r) \
                 + self.gan_disc_loss(real_score_c, fake_score_c)
+
+            self.loss = self.loss_gen + self.loss_disc
 
             # optimizer
             self.gen_opt = tf.train.RMSPropOptimizer(self.learning_rate)
