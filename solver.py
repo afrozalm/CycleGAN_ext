@@ -2,6 +2,7 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
 import pickle
+from random import sample
 import os
 import scipy.io
 import scipy.misc
@@ -18,7 +19,7 @@ class Solver(object):
                  sample_save_path='sample',
                  model_save_path='model',
                  pretrained_model='model/pre_model-4000',
-                 test_model='model/hirar-400',
+                 test_model='model/cycle-400',
                  disc_rep=1,
                  gen_rep=1):
 
@@ -66,6 +67,35 @@ class Solver(object):
         print ('finished loading caricature faces..!')
         return images, labels
 
+    def load_combined(self):
+        print('loading combined images ...')
+        with open(self.combined_dir, 'rb') as f:
+            combined_imgs = pickle.load(f)
+        for lbl in combined_imgs:
+            mean_r = np.mean(combined_imgs[lbl]['real'])
+            mean_c = np.mean(combined_imgs[lbl]['caric'])
+            combined_imgs[lbl]['real'] = \
+                combined_imgs[lbl]['real'] / mean_r - 1
+            combined_imgs[lbl]['caric'] = \
+                combined_imgs[lbl]['caric'] / mean_c - 1
+        print('finished loading combined_imgs')
+        return combined_imgs
+
+    def get_pairs(self, combined_images, label_set):
+        def get_base_pos_neg(label):
+            c_base, c_pos = sample(combined_images[label]['caric'], 2)
+            r_base, r_pos = sample(combined_images[label]['real'], 2)
+            c_neg_lbl, r_neg_lbl = sample(label_set - set([label]), 2)
+            c_neg = sample(combined_images[c_neg_lbl]['caric'], 1)[0]
+            r_neg = sample(combined_images[r_neg_lbl]['real'], 1)[0]
+            return [c_base, c_pos, c_neg,
+                    r_base, r_pos, r_neg]
+
+        # some labels for positive pairs
+        perm = sample(label_set, self.batch_size)
+        all_pairs = zip(*map(get_base_pos_neg, perm))
+        return map(np.asarray, all_pairs)
+
     def merge_images(self, sources, targets, k=10):
         _, h, w, _ = sources.shape
         row = int(np.sqrt(self.batch_size))
@@ -94,6 +124,10 @@ class Solver(object):
                                                          split='train')
         test_images_c, test_labels_c = self.load_caric(self.caric_dir,
                                                        split='test')
+        train_labels = np.hstack((train_labels_r, train_labels_c))
+        test_labels = np.hstack((test_labels_r, test_labels_c))
+        combined_images = self.load_combined()
+        label_set = set(np.hstack((train_labels, test_labels)))
 
         self.loader.add_dataset('caric_faces_tr', train_images_c)
         self.loader.add_dataset('caric_labels_tr', train_labels_c)
@@ -130,10 +164,18 @@ class Solver(object):
                     self.loader.next_group_batch('caric_tr')
                 real_labels, real_images = \
                     self.loader.next_group_batch('real_tr')
+                cb, cp, cn, rb, rp, rn = self.get_pairs(combined_images,
+                                                        label_set)
                 feed_dict = {model.real_images: real_images,
                              model.real_labels: real_labels,
                              model.caric_images: caric_images,
-                             model.caric_labels: caric_labels}
+                             model.caric_labels: caric_labels,
+                             model.c_base: cb,
+                             model.c_pos: cp,
+                             model.c_neg: cn,
+                             model.r_base: rb,
+                             model.r_pos: rp,
+                             model.r_neg: rn}
                 sess.run(model.train_op, feed_dict)
 
                 if (step + 1) % 10 == 0:
@@ -142,15 +184,24 @@ class Solver(object):
                                                feed_dict)
 
                     caric_labels, caric_images = \
-                        self.loader.next_group_batch('caric_tr')
+                        self.loader.next_group_batch('caric_te')
                     real_labels, real_images = \
-                        self.loader.next_group_batch('real_tr')
+                        self.loader.next_group_batch('real_te')
+                    cb, cp, cn, rb, rp, rn = self.get_pairs(combined_images,
+                                                            label_set)
+                    feed_dict = {model.real_images: real_images,
+                                 model.real_labels: real_labels,
+                                 model.caric_images: caric_images,
+                                 model.caric_labels: caric_labels,
+                                 model.c_base: cb,
+                                 model.c_pos: cp,
+                                 model.c_neg: cn,
+                                 model.r_base: rb,
+                                 model.r_pos: rp,
+                                 model.r_neg: rn}
                     test_acc, _ = \
                         sess.run(fetches=[model.accuracy, model.loss],
-                                 feed_dict={model.real_images: real_images,
-                                            model.real_labels: real_labels,
-                                            model.caric_images: caric_images,
-                                            model.caric_labels: caric_labels})
+                                 feed_dict=feed_dict)
                     summary_writer.add_summary(summary, step)
                     print ('Step: [%d/%d] loss: [%.6f] train acc: [%.2f] test acc [%.2f]'
                            % (step + 1, self.pretrain_iter, l, acc, test_acc))
@@ -236,8 +287,8 @@ trans_loss: [%.6f] dec_loss: [%.6f] gen_loss: [%.6f]'
 
                 if (step + 1) % 200 == 0:
                     saver.save(sess, os.path.join(
-                        self.model_save_path, 'hirar'), global_step=step + 1)
-                    print ('model/hirar-%d saved' % (step + 1))
+                        self.model_save_path, 'cycle'), global_step=step + 1)
+                    print ('model/cycle-%d saved' % (step + 1))
 
                 if (step + 1) % 5000 == 0:
                     for i in range(self.sample_iter):
