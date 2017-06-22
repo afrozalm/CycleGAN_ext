@@ -37,6 +37,7 @@ def main(_):
                      learning_rate=FLAGS.learning_rate,
                      n_classes=FLAGS.n_classes,
                      class_weight=FLAGS.class_weight,
+                     adv_weight=FLAGS.adv_weight,
                      cyc_weight=FLAGS.cyc_weight,
                      ucn_weight=FLAGS.ucn_weight,
                      skip=FLAGS.skip,

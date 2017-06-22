@@ -15,7 +15,7 @@ class CycleEXT(object):
 
         assert loss_type in ['wass', 'cross']
         self.mode = mode
-        self.adv_weight =adv_weight
+        self.adv_weight = adv_weight
         self.cyc_weight = cyc_weight
         self.margin = margin
         self.ucn_weight = ucn_weight
@@ -451,6 +451,8 @@ class CycleEXT(object):
             # summary op
             gen_loss_summary = tf.summary.scalar('gen_loss',
                                                  self.loss_gen)
+            gen_adv_loss_summary = tf.summary.scalar('gen_adv_loss',
+                                                 self.loss_gen_adv)
             accuracy_summary = tf.summary.scalar('accuracy',
                                                  self.accuracy)
             disc_loss_summary = tf.summary.scalar('disc_loss',
@@ -473,6 +475,7 @@ class CycleEXT(object):
                                                   self.rec_caric)
             self.summary_op = tf.summary.merge([
                 gen_loss_summary,
+                gen_adv_loss_summary,
                 ucn_loss_summary,
                 cyc_loss_summary,
                 fake_real_img_summ,
