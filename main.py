@@ -5,6 +5,7 @@ from solver import Solver
 flags = tf.app.flags
 flags.DEFINE_integer('n_classes', 200, "number of classes")
 flags.DEFINE_boolean('skip', False, "to keep skip connection in transformer")
+flags.DEFINE_float('adv_weight', 1.0, "weight to adversarial loss")
 flags.DEFINE_float('class_weight', 1.0, "weight to classification loss")
 flags.DEFINE_float('cyc_weight', 1.0, "weight to cycle loss")
 flags.DEFINE_float('ucn_weight', 1.0, "weight to ucn loss")

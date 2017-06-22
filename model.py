@@ -11,10 +11,11 @@ class CycleEXT(object):
     def __init__(self, mode='train', learning_rate=0.0003,
                  n_classes=10, class_weight=1.0, skip=True,
                  margin=4.0, cyc_weight=1.0, loss_type='wass',
-                 ucn_weight=1.0):
+                 ucn_weight=1.0, adv_weight=1.0):
 
         assert loss_type in ['wass', 'cross']
         self.mode = mode
+        self.adv_weight =adv_weight
         self.cyc_weight = cyc_weight
         self.margin = margin
         self.ucn_weight = ucn_weight
@@ -416,7 +417,7 @@ class CycleEXT(object):
             self.loss_gen = self.loss_class * self.class_weight \
                 + self.loss_ucn * self.ucn_weight \
                 + self.loss_cycle * self.cyc_weight \
-                + self.loss_gen_adv
+                + self.loss_gen_adv * self.adv_weight
 
             self.loss_disc = self.gan_disc_loss(real_score_r, fake_score_r) \
                 + self.gan_disc_loss(real_score_c, fake_score_c)
