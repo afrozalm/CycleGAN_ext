@@ -115,8 +115,8 @@ class CycleEXT(object):
                     d4_ = slim.conv2d_transpose(d3, 64, [3, 3],
                                                 scope='conv_transpose4')
                     d4 = slim.batch_norm(d4_, scope='d_bn4')
-                    if self.skip:
-                        d4 += e1
+                    # if self.skip:
+                        # d4 += e1
 
                     # (batch_size, 32, 32, 64) -> (batch_size, 64, 64, 3)
                     d5 = slim.conv2d_transpose(d4, 3, [3, 3],
