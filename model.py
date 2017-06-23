@@ -469,9 +469,9 @@ class CycleEXT(object):
                                                   fake_real)
             fake_caric_img_summ = tf.summary.image('real2caric',
                                                    fake_caric)
-            rec_real_img_summ = tf.summary.image('reconst_real',
+            rec_real_img_summ = tf.summary.image('real_reconst',
                                                  self.rec_real)
-            rec_caric_img_summ = tf.summary.image('reconst_caric',
+            rec_caric_img_summ = tf.summary.image('caric_reconst',
                                                   self.rec_caric)
             self.summary_op = tf.summary.merge([
                 gen_loss_summary,
