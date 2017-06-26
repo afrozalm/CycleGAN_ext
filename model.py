@@ -38,92 +38,6 @@ class CycleEXT(object):
                 l2 = slim.dropout(l2_, scope='dropout2')
                 return l2
 
-    def generator(self, images, reuse=False, scope='Real2Caric'):
-
-        assert scope in ['Real2Caric', 'Caric2Real']
-        scope = 'Gen_' + scope
-        # images: (batch, 64, 64, 3) or (batch, 64, 64, 1)
-        if images.get_shape()[3] == 1:
-            # Replicate the gray scale image 3 times.
-            images = tf.image.grayscale_to_rgb(images)
-
-        with tf.variable_scope(scope, reuse=reuse):
-            with slim.arg_scope([slim.conv2d], padding='SAME',
-                                activation_fn=None,
-                                stride=2,
-                                weights_initializer=xavier_initializer()):
-                with slim.arg_scope([slim.batch_norm], decay=0.95,
-                                    center=True, scale=True,
-                                    activation_fn=tf.nn.relu,
-                                    is_training=self.mode in ['train',
-                                                              'pretrain']):
-                    # (batch_size, 32, 32, 64)
-                    e1_ = slim.conv2d(images, 64, [3, 3],
-                                      scope='conv1')
-                    e1 = slim.batch_norm(e1_, scope='g_bn1')
-                    # (batch_size, 16, 16, 128)
-                    e2_ = slim.conv2d(e1, 128, [3, 3],
-                                      scope='conv2')
-                    e2 = slim.batch_norm(e2_, scope='g_bn2')
-                    # (batch_size, 8, 8, 256)
-                    e3_ = slim.conv2d(e2, 256, [3, 3],
-                                      scope='conv3')
-                    e3 = slim.batch_norm(e3_, scope='g_bn3')
-                    # (batch_size, 4, 4, 512)
-                    e4_ = slim.conv2d(e3, 512, [3, 3],
-                                      scope='conv4')
-                    e4 = slim.batch_norm(e4_, scope='g_bn4')
-                    # (batch_size, 1, 1, 512)
-                    e5 = slim.conv2d(e4, 512, [4, 4], padding='VALID',
-                                     scope='conv5', activation_fn=tf.nn.relu)
-
-            with slim.arg_scope([slim.conv2d_transpose],
-                                padding='SAME', activation_fn=None,
-                                stride=2,
-                                weights_initializer=xavier_initializer()):
-                with slim.arg_scope([slim.batch_norm],
-                                    decay=0.95, center=True, scale=True,
-                                    activation_fn=tf.nn.relu,
-                                    is_training=(self.mode == 'train')):
-
-                    # (batch, 1, 1, 512) -> (batch_size, 4, 4, 512)
-                    d1_ = slim.conv2d_transpose(e5, 512, [4, 4],
-                                                padding='VALID',
-                                                scope='conv_transpose1')
-                    d1_ = slim.batch_norm(d1_, scope='d_bn1')
-                    d1 = slim.dropout(d1_, scope='dropout1')
-                    if self.skip:
-                        d1 += e4
-
-                    # (batch_size, 4, 4, 512) -> (batch_size, 8, 8, 256)
-                    d2_ = slim.conv2d_transpose(d1, 256, [3, 3],
-                                                scope='conv_transpose2')
-                    d2_ = slim.batch_norm(d2_, scope='d_bn2')
-                    d2 = slim.dropout(d2_, scope='dropout2')
-                    if self.skip:
-                        d2 += e3
-
-                    # (batch_size, 8, 8, 256) -> (batch_size, 16, 16, 128)
-                    d3_ = slim.conv2d_transpose(d2, 128, [3, 3],
-                                                scope='conv_transpose3')
-                    d3_ = slim.batch_norm(d3_, scope='d_bn3')
-                    d3 = slim.dropout(d3_, scope='dropout3')
-                    if self.skip:
-                        d3 += e2
-
-                    # (batch_size, 16, 16, 128) -> (batch_size, 32, 32, 64)
-                    d4_ = slim.conv2d_transpose(d3, 64, [3, 3],
-                                                scope='conv_transpose4')
-                    d4 = slim.batch_norm(d4_, scope='d_bn4')
-                    # if self.skip:
-                        # d4 += e1
-
-                    # (batch_size, 32, 32, 64) -> (batch_size, 64, 64, 3)
-                    d5 = slim.conv2d_transpose(d4, 3, [3, 3],
-                                               activation_fn=tf.nn.tanh,
-                                               scope='conv_transpose5')
-                    return e5, d5
-
     def discriminator(self, images, scope='Real', reuse=False):
 
         # images: (batch, 64, 64, 3)
@@ -185,6 +99,13 @@ class CycleEXT(object):
         _, rec_caric = self.generator(images=fake_real,
                                       scope='Real2Caric',
                                       reuse=True)
+
+        self.rec_score_c = self.discriminator(images=rec_caric,
+                                              scope='Caric',
+                                              reuse=True)
+        self.rec_score_r = self.discriminator(images=rec_real,
+                                              scope='Real',
+                                              reuse=True)
         self.rec_real = rec_real
         self.rec_caric = rec_caric
 
@@ -202,6 +123,7 @@ class CycleEXT(object):
         '''
         how to form pairs:
             positive: c_base<->c_pos, r_base<->r_pos,
+                    # d4 += e1
                       c_base<->r_base, c_pos<->r_pos,
                       c_base<->r_pos, c_pos<->r_base
             negative: c_base<->c_neg, r_base<->r_neg,
@@ -412,7 +334,9 @@ class CycleEXT(object):
                                                   fake_caric=fake_caric)
 
             self.loss_gen_adv = self.gan_gen_loss(fake_score_r) \
-                + self.gan_gen_loss(fake_score_c)
+                + self.gan_gen_loss(fake_score_c) \
+                + self.gan_gen_loss(self.rec_score_r) \
+                + self.gan_gen_loss(self.rec_score_c)
 
             self.loss_gen = self.loss_class * self.class_weight \
                 + self.loss_ucn * self.ucn_weight \
@@ -420,7 +344,9 @@ class CycleEXT(object):
                 + self.loss_gen_adv * self.adv_weight
 
             self.loss_disc = self.gan_disc_loss(real_score_r, fake_score_r) \
-                + self.gan_disc_loss(real_score_c, fake_score_c)
+                + self.gan_disc_loss(real_score_c, fake_score_c) \
+                + self.gan_disc_loss(real_score_r, self.rec_score_r) \
+                + self.gan_disc_loss(real_score_c, self.rec_score_c)
 
             self.loss = self.loss_gen + self.loss_disc
             self.fake_caric = fake_caric
@@ -452,7 +378,7 @@ class CycleEXT(object):
             gen_loss_summary = tf.summary.scalar('gen_loss',
                                                  self.loss_gen)
             gen_adv_loss_summary = tf.summary.scalar('gen_adv_loss',
-                                                 self.loss_gen_adv)
+                                                     self.loss_gen_adv)
             accuracy_summary = tf.summary.scalar('accuracy',
                                                  self.accuracy)
             disc_loss_summary = tf.summary.scalar('disc_loss',
