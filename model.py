@@ -115,8 +115,8 @@ class CycleEXT(object):
                     d4_ = slim.conv2d_transpose(d3, 64, [3, 3],
                                                 scope='conv_transpose4')
                     d4 = slim.batch_norm(d4_, scope='d_bn4')
-                    # if self.skip:
-                    # d4 += e1
+                    if self.skip:
+                        d4 += e1
 
                     # (batch_size, 32, 32, 64) -> (batch_size, 64, 64, 3)
                     d5 = slim.conv2d_transpose(d4, 3, [3, 3],
@@ -421,8 +421,8 @@ class CycleEXT(object):
 
             self.loss_gen_adv = self.gan_gen_loss(fake_score_r) \
                 + self.gan_gen_loss(fake_score_c) \
-                + self.gan_gen_loss(self.rec_score_r) \
-                + self.gan_gen_loss(self.rec_score_c)
+                + self.gan_gen_loss(self.rec_score_r) * 5.0 \
+                + self.gan_gen_loss(self.rec_score_c) * 5.0
 
             self.loss_gen = self.loss_class * self.class_weight \
                 + self.loss_ucn * self.ucn_weight \
