@@ -26,16 +26,12 @@ class CycleEXT(object):
         self.class_weight = class_weight
 
     def classifier(self, encodings, reuse=False):
-        with tf.variable_scope('classifier', reuse=reuse):
-            with slim.arg_scope([slim.dropout],
-                                is_training=self.mode in ['train',
-                                                          'pretrain']):
 
-                flattened = slim.flatten(encodings)
-                l1_ = slim.fully_connected(flattened, 400, scope='fc1')
-                l1 = slim.dropout(l1_, scope='dropout1')
-                l2 = slim.fully_connected(l1, self.n_classes, scope='fc2')
-                return l2
+        with tf.variable_scope('classifier', reuse=reuse):
+            flattened = slim.flatten(encodings)
+            l1 = slim.fully_connected(flattened, 400, scope='fc1')
+            l2 = slim.fully_connected(l1, self.n_classes, scope='fc2')
+            return l2
 
     def generator(self, images, reuse=False, scope='Real2Caric'):
 
@@ -178,12 +174,12 @@ class CycleEXT(object):
         def rec_loss(orig, rec):
             return tf.reduce_mean(tf.losses.absolute_difference(orig, rec))
 
-        _, rec_real = self.generator(images=fake_caric,
-                                     scope='Caric2Real',
-                                     reuse=True)
-        _, rec_caric = self.generator(images=fake_real,
-                                      scope='Real2Caric',
-                                      reuse=True)
+        enc_rec_real, rec_real = self.generator(images=fake_caric,
+                                                scope='Caric2Real',
+                                                reuse=True)
+        enc_rec_caric, rec_caric = self.generator(images=fake_real,
+                                                  scope='Real2Caric',
+                                                  reuse=True)
 
         self.rec_score_c = self.discriminator(images=rec_caric,
                                               scope='Caric',
@@ -193,6 +189,8 @@ class CycleEXT(object):
                                               reuse=True)
         self.rec_real = rec_real
         self.rec_caric = rec_caric
+        self.enc_rec_caric = enc_rec_caric
+        self.enc_rec_real = enc_rec_real
 
         fwd_loss = rec_loss(orig=real, rec=rec_real)
         bwd_loss = rec_loss(orig=caric, rec=rec_caric)
