@@ -34,8 +34,7 @@ class CycleEXT(object):
                 flattened = slim.flatten(encodings)
                 l1_ = slim.fully_connected(flattened, 400, scope='fc1')
                 l1 = slim.dropout(l1_, scope='dropout1')
-                l2_ = slim.fully_connected(l1, self.n_classes, scope='fc2')
-                l2 = slim.dropout(l2_, scope='dropout2')
+                l2 = slim.fully_connected(l1, self.n_classes, scope='fc2')
                 return l2
 
     def generator(self, images, reuse=False, scope='Real2Caric'):
@@ -407,17 +406,17 @@ class CycleEXT(object):
                                                    tf.float32))
 
             # losses
+            self.loss_cycle = self.get_cycle_loss(real=self.real_images,
+                                                  caric=self.caric_images,
+                                                  fake_real=fake_real,
+                                                  fake_caric=fake_caric)
+
             self.loss_class = \
                 tf.losses.sparse_softmax_cross_entropy(labels,
                                                        logits)
 
             self.loss_ucn = self.get_ucn_loss(pos_encs=pos_pair,
                                               neg_encs=neg_pair)
-
-            self.loss_cycle = self.get_cycle_loss(real=self.real_images,
-                                                  caric=self.caric_images,
-                                                  fake_real=fake_real,
-                                                  fake_caric=fake_caric)
 
             self.loss_gen_adv = self.gan_gen_loss(fake_score_r) \
                 + self.gan_gen_loss(fake_score_c) \
@@ -463,8 +462,6 @@ class CycleEXT(object):
             # summary op
             gen_loss_summary = tf.summary.scalar('gen_loss',
                                                  self.loss_gen)
-            gen_adv_loss_summary = tf.summary.scalar('gen_adv_loss',
-                                                     self.loss_gen_adv)
             accuracy_summary = tf.summary.scalar('accuracy',
                                                  self.accuracy)
             disc_loss_summary = tf.summary.scalar('disc_loss',
@@ -473,6 +470,10 @@ class CycleEXT(object):
                                                  self.loss_ucn)
             cyc_loss_summary = tf.summary.scalar('cycle_loss',
                                                  self.loss_cycle)
+            class_loss_summary = tf.summary.scalar('classification_loss',
+                                                   self.loss_class)
+            gen_adv_loss_summary = tf.summary.scalar('gen_adv_loss',
+                                                     self.loss_gen_adv)
             real_images_summary = tf.summary.image('real_images',
                                                    self.real_images)
             caric_images_summary = tf.summary.image('caric_images',
@@ -490,6 +491,7 @@ class CycleEXT(object):
                 gen_adv_loss_summary,
                 ucn_loss_summary,
                 cyc_loss_summary,
+                class_loss_summary,
                 fake_real_img_summ,
                 fake_caric_img_summ,
                 rec_caric_img_summ,
