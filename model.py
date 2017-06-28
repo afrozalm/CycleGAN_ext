@@ -34,8 +34,7 @@ class CycleEXT(object):
                 flattened = slim.flatten(encodings)
                 l1_ = slim.fully_connected(flattened, 400, scope='fc1')
                 l1 = slim.dropout(l1_, scope='dropout1')
-                l2_ = slim.fully_connected(l1, self.n_classes, scope='fc2')
-                l2 = slim.dropout(l2_, scope='dropout2')
+                l2 = slim.fully_connected(l1, self.n_classes, scope='fc2')
                 return l2
 
     def generator(self, images, reuse=False, scope='Real2Caric'):
