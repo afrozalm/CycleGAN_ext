@@ -11,10 +11,11 @@ class CycleEXT(object):
     def __init__(self, mode='train', learning_rate=0.0003,
                  n_classes=10, class_weight=1.0, skip=True,
                  margin=4.0, cyc_weight=1.0, loss_type='wass',
-                 ucn_weight=1.0, adv_weight=1.0):
+                 ucn_weight=1.0, adv_weight=1.0, use_dropout=False):
 
         assert loss_type in ['wass', 'cross']
         self.mode = mode
+        self.use_dropout = use_dropout
         self.adv_weight = adv_weight
         self.cyc_weight = cyc_weight
         self.margin = margin
@@ -86,7 +87,10 @@ class CycleEXT(object):
                                                 padding='VALID',
                                                 scope='conv_transpose1')
                     d1_ = slim.batch_norm(d1_, scope='d_bn1')
-                    d1 = slim.dropout(d1_, scope='dropout1')
+                    if self.use_dropout:
+                        d1 = slim.dropout(d1_, scope='dropout1')
+                    else:
+                        d1 = d1_
                     if self.skip:
                         d1 += e4
 
@@ -94,7 +98,10 @@ class CycleEXT(object):
                     d2_ = slim.conv2d_transpose(d1, 256, [3, 3],
                                                 scope='conv_transpose2')
                     d2_ = slim.batch_norm(d2_, scope='d_bn2')
-                    d2 = slim.dropout(d2_, scope='dropout2')
+                    if self.use_dropout:
+                        d2 = slim.dropout(d2_, scope='dropout2')
+                    else:
+                        d1 = d1_
                     if self.skip:
                         d2 += e3
 
@@ -102,7 +109,10 @@ class CycleEXT(object):
                     d3_ = slim.conv2d_transpose(d2, 128, [3, 3],
                                                 scope='conv_transpose3')
                     d3_ = slim.batch_norm(d3_, scope='d_bn3')
-                    d3 = slim.dropout(d3_, scope='dropout3')
+                    if self.use_dropout:
+                        d3 = slim.dropout(d3_, scope='dropout3')
+                    else:
+                        d1 = d1_
                     if self.skip:
                         d3 += e2
 
@@ -138,19 +148,23 @@ class CycleEXT(object):
                     net = slim.conv2d(images, 64, [3, 3],
                                       scope='conv1')
                     net = slim.batch_norm(net, scope='bn1')
-                    net = slim.dropout(net, scope='dropout1')
+                    if self.use_dropout:
+                        net = slim.dropout(net, scope='dropout1')
                     # (batch_size, 32, 32, 64) -> (batch_size, 16, 16, 128)
                     net = slim.conv2d(net, 128, [3, 3], scope='conv2')
                     net = slim.batch_norm(net, scope='bn2')
-                    net = slim.dropout(net, scope='dropout2')
+                    if self.use_dropout:
+                        net = slim.dropout(net, scope='dropout2')
                     # (batch_size, 16, 16, 128) -> (batch_size, 8, 8, 256)
                     net = slim.conv2d(net, 256, [3, 3], scope='conv3')
                     net = slim.batch_norm(net, scope='bn3')
-                    net = slim.dropout(net, scope='dropout3')
+                    if self.use_dropout:
+                        net = slim.dropout(net, scope='dropout3')
                     # (batch_size, 8, 8, 256) -> (batch_size, 4, 4, 512)
                     net = slim.conv2d(net, 512, [3, 3], scope='conv4')
                     net = slim.batch_norm(net, scope='bn4')
-                    net = slim.dropout(net, scope='dropout4')
+                    if self.use_dropout:
+                        net = slim.dropout(net, scope='dropout4')
                     if self.loss_type == 'cross':
                         return tf.nn.sigmoid(net)
                     return net
