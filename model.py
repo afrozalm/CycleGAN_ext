@@ -27,7 +27,6 @@ class CycleEXT(object):
         self.class_weight = class_weight
 
     def classifier(self, encodings, reuse=False):
-
         with tf.variable_scope('classifier', reuse=reuse):
             flattened = slim.flatten(encodings)
             l1 = slim.fully_connected(flattened, 400, scope='fc1')
@@ -35,7 +34,6 @@ class CycleEXT(object):
             return l2
 
     def generator(self, images, reuse=False, scope='Real2Caric'):
-
         assert scope in ['Real2Caric', 'Caric2Real']
         scope = 'Gen_' + scope
         # images: (batch, 64, 64, 3) or (batch, 64, 64, 1)
@@ -130,8 +128,6 @@ class CycleEXT(object):
                     return e5, d5
 
     def discriminator(self, images, scope='Real', reuse=False):
-
-        # images: (batch, 64, 64, 3)
         assert scope in ['Real', 'Caric']
         scope = 'Disc_' + scope
         with tf.variable_scope(scope, reuse=reuse):
@@ -142,7 +138,7 @@ class CycleEXT(object):
                 with slim.arg_scope([slim.batch_norm], decay=0.95,
                                     center=True, scale=True,
                                     activation_fn=tf.nn.relu,
-                                    is_training=(self.mode == 'train')):
+                                    is_training=(self.mode == 'pretrain')):
 
                     # (batch, 64, 64, 3) -> (batch_size, 32, 32, 64)
                     net = slim.conv2d(images, 64, [3, 3],
@@ -165,6 +161,7 @@ class CycleEXT(object):
                     net = slim.batch_norm(net, scope='bn4')
                     if self.use_dropout:
                         net = slim.dropout(net, scope='dropout4')
+                    self.raw_disc_score = net
                     if self.loss_type == 'cross':
                         return tf.nn.sigmoid(net)
                     return net
@@ -260,7 +257,6 @@ class CycleEXT(object):
         return pos_pair, neg_pair
 
     def build_model(self):
-
         if self.mode == 'pretrain':
             self.real_images = tf.placeholder(tf.float32, [None, 64, 64, 3],
                                               'real_faces')
@@ -391,14 +387,14 @@ class CycleEXT(object):
             enc_caric, fake_real = self.generator(self.caric_images,
                                                   scope='Caric2Real')
 
-            fake_score_c = self.discriminator(images=fake_caric,
-                                              scope='Caric')
-            fake_score_r = self.discriminator(images=fake_real,
-                                              scope="Real")
             real_score_c = self.discriminator(images=self.caric_images,
+                                              scope='Caric')
+            real_score_r = self.discriminator(images=self.real_images,
+                                              scope="Real")
+            fake_score_c = self.discriminator(images=fake_caric,
                                               scope="Caric",
                                               reuse=True)
-            real_score_r = self.discriminator(images=self.real_images,
+            fake_score_r = self.discriminator(images=fake_real,
                                               scope="Real",
                                               reuse=True)
 
@@ -464,7 +460,9 @@ class CycleEXT(object):
                 self.disc_op = slim.learning.create_train_op(
                     self.loss_disc,
                     self.disc_opt,
+                    # variables_to_train=disc_vars)
                     variables_to_train=disc_vars,
+                    # clip_gradient_norm=1)
                     clip_gradient_norm=0.01)
                 self.gen_op = slim.learning.create_train_op(
                     self.loss_gen,
@@ -515,12 +513,16 @@ class CycleEXT(object):
             ]
             if self.loss_type == 'cross':
                 summary_list.append(tf.summary.scalar('prob_fake_c',
-                                                       tf.reduce_mean(fake_score_c)))
+                                                       tf.reduce_min(fake_score_c)))
                 summary_list.append(tf.summary.scalar('prob_fake_r',
-                                                       tf.reduce_mean(fake_score_r)))
+                                                       tf.reduce_min(fake_score_r)))
                 summary_list.append(tf.summary.scalar('prob_real_c',
                                                        tf.reduce_mean(real_score_c)))
                 summary_list.append(tf.summary.scalar('prob_real_r',
                                                        tf.reduce_mean(real_score_r)))
+                summary_list.append(tf.summary.scalar('raw_disc_score_min',
+                                                       tf.reduce_min(self.raw_disc_score)))
+                summary_list.append(tf.summary.scalar('raw_disc_score_mean',
+                                                       tf.reduce_mean(self.raw_disc_score)))
 
             self.summary_op = tf.summary.merge(summary_list)
