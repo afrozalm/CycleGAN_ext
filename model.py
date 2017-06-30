@@ -101,7 +101,7 @@ class CycleEXT(object):
                     if self.use_dropout:
                         d2 = slim.dropout(d2_, scope='dropout2')
                     else:
-                        d1 = d1_
+                        d2 = d2_
                     if self.skip:
                         d2 += e3
 
@@ -112,16 +112,16 @@ class CycleEXT(object):
                     if self.use_dropout:
                         d3 = slim.dropout(d3_, scope='dropout3')
                     else:
-                        d1 = d1_
-                    if self.skip:
-                        d3 += e2
+                        d3 = d3_
+                    # if self.skip:
+                        # d3 += e2
 
                     # (batch_size, 16, 16, 128) -> (batch_size, 32, 32, 64)
                     d4_ = slim.conv2d_transpose(d3, 64, [3, 3],
                                                 scope='conv_transpose4')
                     d4 = slim.batch_norm(d4_, scope='d_bn4')
-                    if self.skip:
-                        d4 += e1
+                    # if self.skip:
+                        # d4 += e1
 
                     # (batch_size, 32, 32, 64) -> (batch_size, 64, 64, 3)
                     d5 = slim.conv2d_transpose(d4, 3, [3, 3],
@@ -430,10 +430,10 @@ class CycleEXT(object):
             self.loss_ucn = self.get_ucn_loss(pos_encs=pos_pair,
                                               neg_encs=neg_pair)
 
-            self.loss_gen_adv = self.gan_gen_loss(fake_score_r) \
-                + self.gan_gen_loss(fake_score_c) \
-                + self.gan_gen_loss(self.rec_score_r) * 5.0 \
-                + self.gan_gen_loss(self.rec_score_c) * 5.0
+            self.loss_gen_adv = self.gan_gen_loss(fake_score_r) * 15.0 \
+                + self.gan_gen_loss(fake_score_c) * 15.0 \
+                + self.gan_gen_loss(self.rec_score_r) \
+                + self.gan_gen_loss(self.rec_score_c)
 
             self.loss_gen = self.loss_class * self.class_weight \
                 + self.loss_ucn * self.ucn_weight \
@@ -498,7 +498,7 @@ class CycleEXT(object):
                                                  self.rec_real)
             rec_caric_img_summ = tf.summary.image('caric_reconst',
                                                   self.rec_caric)
-            self.summary_op = tf.summary.merge([
+            summary_list = [
                 gen_loss_summary,
                 gen_adv_loss_summary,
                 ucn_loss_summary,
@@ -512,4 +512,15 @@ class CycleEXT(object):
                 disc_loss_summary,
                 real_images_summary,
                 caric_images_summary,
-            ])
+            ]
+            if self.loss_type == 'cross':
+                summary_list.append(tf.summary.scalar('prob_fake_c',
+                                                       tf.reduce_mean(self.fake_score_c))
+                summary_list.append(tf.summary.scalar('prob_fake_r',
+                                                       tf.reduce_mean(self.fake_score_r))
+                summary_list.append(tf.summary.scalar('prob_real_c',
+                                                       tf.reduce_mean(self.real_score_c))
+                summary_list.append(tf.summary.scalar('prob_real_r',
+                                                       tf.reduce_mean(self.real_score_r))
+
+            self.summary_op = tf.summary.merge(summary_list)
