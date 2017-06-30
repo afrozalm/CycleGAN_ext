@@ -515,12 +515,12 @@ class CycleEXT(object):
             ]
             if self.loss_type == 'cross':
                 summary_list.append(tf.summary.scalar('prob_fake_c',
-                                                       tf.reduce_mean(self.fake_score_c)))
+                                                       tf.reduce_mean(fake_score_c)))
                 summary_list.append(tf.summary.scalar('prob_fake_r',
-                                                       tf.reduce_mean(self.fake_score_r)))
+                                                       tf.reduce_mean(fake_score_r)))
                 summary_list.append(tf.summary.scalar('prob_real_c',
-                                                       tf.reduce_mean(self.real_score_c)))
+                                                       tf.reduce_mean(real_score_c)))
                 summary_list.append(tf.summary.scalar('prob_real_r',
-                                                       tf.reduce_mean(self.real_score_r)))
+                                                       tf.reduce_mean(real_score_r)))
 
             self.summary_op = tf.summary.merge(summary_list)
