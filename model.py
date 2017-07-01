@@ -130,6 +130,10 @@ class CycleEXT(object):
     def discriminator(self, images, scope='Real', reuse=False):
         assert scope in ['Real', 'Caric']
         scope = 'Disc_' + scope
+
+        def lrelu(x, leak=0.2, name='leaky_relu'):
+            return tf.maximum(x, leak*x)
+
         with tf.variable_scope(scope, reuse=reuse):
             with slim.arg_scope([slim.conv2d], padding='SAME',
                                 activation_fn=None,
@@ -137,8 +141,8 @@ class CycleEXT(object):
                                 weights_initializer=xavier_initializer()):
                 with slim.arg_scope([slim.batch_norm], decay=0.95,
                                     center=True, scale=True,
-                                    activation_fn=tf.nn.relu,
-                                    is_training=(self.mode == 'pretrain')):
+                                    activation_fn=lrelu,
+                                    is_training=(self.mode == 'train')):
 
                     # (batch, 64, 64, 3) -> (batch_size, 32, 32, 64)
                     net = slim.conv2d(images, 64, [3, 3],
