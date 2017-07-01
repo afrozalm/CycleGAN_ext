@@ -119,7 +119,7 @@ class CycleEXT(object):
                                                 scope='conv_transpose4')
                     d4 = slim.batch_norm(d4_, scope='d_bn4')
                     # if self.skip:
-                        # d4 += e1
+                    # d4 += e1
 
                     # (batch_size, 32, 32, 64) -> (batch_size, 64, 64, 3)
                     d5 = slim.conv2d_transpose(d4, 3, [3, 3],
@@ -132,7 +132,7 @@ class CycleEXT(object):
         scope = 'Disc_' + scope
 
         def lrelu(x, leak=0.2, name='leaky_relu'):
-            return tf.maximum(x, leak*x)
+            return tf.maximum(x, leak * x)
 
         with tf.variable_scope(scope, reuse=reuse):
             with slim.arg_scope([slim.conv2d], padding='SAME',
@@ -515,18 +515,5 @@ class CycleEXT(object):
                 real_images_summary,
                 caric_images_summary,
             ]
-            if self.loss_type == 'cross':
-                summary_list.append(tf.summary.scalar('prob_fake_c',
-                                                       tf.reduce_min(fake_score_c)))
-                summary_list.append(tf.summary.scalar('prob_fake_r',
-                                                       tf.reduce_min(fake_score_r)))
-                summary_list.append(tf.summary.scalar('prob_real_c',
-                                                       tf.reduce_mean(real_score_c)))
-                summary_list.append(tf.summary.scalar('prob_real_r',
-                                                       tf.reduce_mean(real_score_r)))
-                summary_list.append(tf.summary.scalar('raw_disc_score_min',
-                                                       tf.reduce_min(self.raw_disc_score)))
-                summary_list.append(tf.summary.scalar('raw_disc_score_mean',
-                                                       tf.reduce_mean(self.raw_disc_score)))
 
             self.summary_op = tf.summary.merge(summary_list)
