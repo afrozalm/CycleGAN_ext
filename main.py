@@ -8,6 +8,7 @@ flags.DEFINE_boolean('skip', False, "to keep skip connection in transformer")
 flags.DEFINE_boolean('use_dropout', False, "to use dropout")
 flags.DEFINE_float('adv_weight', 1.0, "weight to adversarial loss")
 flags.DEFINE_float('class_weight', 1.0, "weight to classification loss")
+flags.DEFINE_float('tv_weight', 1.0, "weight to total variation loss")
 flags.DEFINE_float('cyc_weight', 1.0, "weight to cycle loss")
 flags.DEFINE_float('ucn_weight', 1.0, "weight to ucn loss")
 flags.DEFINE_float('margin', 2.0, "margin for ucn negative class")
@@ -41,6 +42,7 @@ def main(_):
                      adv_weight=FLAGS.adv_weight,
                      cyc_weight=FLAGS.cyc_weight,
                      ucn_weight=FLAGS.ucn_weight,
+                     tv_weight=FLAGS.tv_weight,
                      skip=FLAGS.skip,
                      use_dropout=FLAGS.use_dropout,
                      margin=FLAGS.margin,

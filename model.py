@@ -11,11 +11,13 @@ class CycleEXT(object):
     def __init__(self, mode='train', learning_rate=0.0003,
                  n_classes=10, class_weight=1.0, skip=True,
                  margin=4.0, cyc_weight=1.0, loss_type='wass',
-                 ucn_weight=1.0, adv_weight=1.0, use_dropout=False):
+                 ucn_weight=1.0, adv_weight=1.0, tv_weight=0.01,
+                 use_dropout=False):
 
         assert loss_type in ['wass', 'cross']
         self.mode = mode
         self.use_dropout = use_dropout
+        self.tv_weight = tv_weight
         self.adv_weight = adv_weight
         self.cyc_weight = cyc_weight
         self.margin = margin
@@ -427,18 +429,23 @@ class CycleEXT(object):
                 tf.losses.sparse_softmax_cross_entropy(labels,
                                                        logits)
 
+            self.loss_tv = self.tv_weight * tf.reduce_mean(
+                    tf.image.total_variation(images=fake_real) +
+                    tf.image.total_variation(images=fake_caric))
+
             self.loss_ucn = self.get_ucn_loss(pos_encs=pos_pair,
                                               neg_encs=neg_pair)
 
             self.loss_gen_adv = self.gan_gen_loss(fake_score_r) \
                 + self.gan_gen_loss(fake_score_c) \
-                + self.gan_gen_loss(self.rec_score_r) * 15.0 \
-                + self.gan_gen_loss(self.rec_score_c) * 15.0
+                + self.gan_gen_loss(self.rec_score_r) \
+                + self.gan_gen_loss(self.rec_score_c)
 
             self.loss_gen = self.loss_class * self.class_weight \
                 + self.loss_ucn * self.ucn_weight \
                 + self.loss_cycle * self.cyc_weight \
-                + self.loss_gen_adv * self.adv_weight
+                + self.loss_gen_adv * self.adv_weight \
+                + self.loss_tv * self.tv_weight
 
             self.loss_disc = self.gan_disc_loss(real_score_r, fake_score_r) \
                 + self.gan_disc_loss(real_score_c, fake_score_c) \
@@ -476,6 +483,8 @@ class CycleEXT(object):
             # summary op
             gen_loss_summary = tf.summary.scalar('gen_loss',
                                                  self.loss_gen)
+            tv_loss_summary = tf.summary.scalar('loss_total_variation',
+                                                 self.loss_tv)
             accuracy_summary = tf.summary.scalar('accuracy',
                                                  self.accuracy)
             disc_loss_summary = tf.summary.scalar('disc_loss',
@@ -503,6 +512,7 @@ class CycleEXT(object):
             summary_list = [
                 gen_loss_summary,
                 gen_adv_loss_summary,
+                tv_loss_summary,
                 ucn_loss_summary,
                 cyc_loss_summary,
                 class_loss_summary,
