@@ -429,7 +429,7 @@ class CycleEXT(object):
                 tf.losses.sparse_softmax_cross_entropy(labels,
                                                        logits)
 
-            self.loss_tv = self.tv_weight * tf.reduce_mean(
+            self.loss_tv = tf.reduce_mean(
                     tf.image.total_variation(images=fake_real) +
                     tf.image.total_variation(images=fake_caric))
 
