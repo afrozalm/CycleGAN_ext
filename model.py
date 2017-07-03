@@ -430,10 +430,10 @@ class CycleEXT(object):
             self.loss_ucn = self.get_ucn_loss(pos_encs=pos_pair,
                                               neg_encs=neg_pair)
 
-            self.loss_gen_adv = self.gan_gen_loss(fake_score_r) * 15.0 \
-                + self.gan_gen_loss(fake_score_c) * 15.0 \
-                + self.gan_gen_loss(self.rec_score_r) \
-                + self.gan_gen_loss(self.rec_score_c)
+            self.loss_gen_adv = self.gan_gen_loss(fake_score_r) \
+                + self.gan_gen_loss(fake_score_c) \
+                + self.gan_gen_loss(self.rec_score_r) * 15.0 \
+                + self.gan_gen_loss(self.rec_score_c) * 15.0
 
             self.loss_gen = self.loss_class * self.class_weight \
                 + self.loss_ucn * self.ucn_weight \
